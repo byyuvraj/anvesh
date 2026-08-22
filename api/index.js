@@ -43,6 +43,8 @@ const authMiddleware = (req, res, next) => {
   } catch (err) {
     res.status(401).json({ error: 'Token is not valid' });
   }
+};
+
 // --- Profile Update Route ---
 app.put('/api/auth/profile', authMiddleware, async (req, res) => {
   try {
