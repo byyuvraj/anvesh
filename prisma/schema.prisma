@@ -1,0 +1,99 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id                 String       @id @default(uuid())
+  email              String       @unique
+  passwordHash       String
+  username           String       @unique
+  travelStyle        String?
+  bio                String?
+  profilePicture     String?
+  coverPhoto         String?
+  
+  // New Onboarding Fields
+  onboardingComplete Boolean      @default(false)
+  placesVisitedCount Int          @default(0)
+  budgetPreference   String?      // e.g., "Luxury", "Budget", "Mid-range"
+  preferredVibe      String?      // e.g., "Nature", "City", "Historical", "Adventure"
+  
+  createdAt          DateTime     @default(now())
+  
+  itineraries        Itinerary[]
+  experiences        Experience[]
+  blogs              Blog[]
+  comments           Comment[]
+}
+
+model Location {
+  id          String     @id @default(uuid())
+  name        String
+  type        String     // "State", "City", "Village", "HiddenGem"
+  description String?
+  imageUrl    String?
+  
+  // Self-referential hierarchy (e.g. A city belongs to a state)
+  parentId    String?
+  parent      Location?  @relation("LocationHierarchy", fields: [parentId], references: [id])
+  children    Location[] @relation("LocationHierarchy")
+  
+  // Relational data
+  blogs       Blog[]
+  
+  createdAt   DateTime   @default(now())
+}
+
+model Blog {
+  id          String    @id @default(uuid())
+  title       String
+  richContent String
+  coverImage  String?
+  
+  userId      String
+  user        User      @relation(fields: [userId], references: [id])
+  
+  locationId  String?
+  location    Location? @relation(fields: [locationId], references: [id])
+
+  createdAt   DateTime  @default(now())
+  comments    Comment[]
+}
+
+model Comment {
+  id        String   @id @default(uuid())
+  text      String
+  userId    String
+  blogId    String
+  createdAt DateTime @default(now())
+  
+  user      User     @relation(fields: [userId], references: [id])
+  blog      Blog     @relation(fields: [blogId], references: [id])
+}
+
+// Deprecated models kept for safety to avoid dropping data immediately
+model Itinerary {
+  id          String   @id @default(uuid())
+  userId      String
+  destination String
+  data        String   
+  isPublic    Boolean  @default(false)
+  createdAt   DateTime @default(now())
+  user        User     @relation(fields: [userId], references: [id])
+}
+
+model Experience {
+  id        String   @id @default(uuid())
+  userId    String
+  title     String
+  story     String
+  location  String
+  imageUrl  String?
+  createdAt DateTime @default(now())
+  user      User     @relation(fields: [userId], references: [id])
+}

@@ -1,46 +1,110 @@
 @import "tailwindcss";
-
-@theme {
+@custom-variant dark (&:is(.dark *));@theme {
   --font-sans: "Outfit", system-ui, sans-serif;
   --font-serif: "Playfair Display", serif;
   --font-handwritten: "Caveat", cursive;
 
-  /* Dark theme base */
-  --color-dark-950: #050505;
-  --color-dark-900: #0a0a0a;
-  --color-dark-800: #111111;
-  --color-dark-700: #1a1a1a;
-  --color-dark-600: #222222;
-  --color-dark-500: #2a2a2a;
-  --color-dark-400: #333333;
-  --color-dark-300: #444444;
+  /* Premium Light SaaS Colors */
+  --color-stone-50: #ffffff;
+  --color-stone-100: #f8fafc;
+  --color-stone-200: #f1f5f9;
+  --color-stone-300: #e2e8f0;
+  --color-stone-400: #cbd5e1;
+  --color-stone-500: #94a3b8;
+  --color-stone-600: #64748b;
+  --color-stone-700: #475569;
+  --color-stone-800: #334155;
+  --color-stone-900: #0f172a;
 
-  /* Lime / Chartreuse accent */
-  --color-lime-400: #c8ff00;
-  --color-lime-500: #b8f200;
-  --color-lime-600: #a0d900;
-  --color-lime-700: #89b800;
-
-  /* Neutral whites */
-  --color-neutral-50: #fafafa;
-  --color-neutral-100: #f5f5f5;
-  --color-neutral-200: #e5e5e5;
-  --color-neutral-300: #d4d4d4;
-  --color-neutral-400: #a3a3a3;
-  --color-neutral-500: #737373;
-  --color-neutral-600: #525252;
-
-  /* Status colors */
-  --color-rating: #facc15;
-  --color-easy: #22c55e;
-  --color-moderate: #f59e0b;
-  --color-difficult: #ef4444;
+  /* Accent Color (Lime/Chartreuse) */
+  --color-accent: #c8ff00;
+  --color-accent-hover: #b8f200;
 
   --animate-shimmer: shimmer 2s infinite linear;
+  --animate-float: float 6s ease-in-out infinite;
 
   @keyframes shimmer {
     0% { background-position: -200% 0; }
     100% { background-position: 200% 0; }
+  }
+
+  @keyframes float {
+    0% { transform: translateY(0px); }
+    50% { transform: translateY(-20px); }
+    100% { transform: translateY(0px); }
+  }
+}
+
+@layer base {
+  body {
+    background-color: #f8fafc; /* Very light slate-ish background */
+    color: var(--color-stone-800);
+    /* Subtle background mesh gradient for SaaS feel */
+    background-image: 
+      radial-gradient(at 0% 0%, rgba(200, 255, 0, 0.05) 0px, transparent 50%),
+      radial-gradient(at 100% 100%, rgba(51, 65, 85, 0.03) 0px, transparent 50%);
+    background-attachment: fixed;
+    transition: background-color 0.3s ease, color 0.3s ease;
+  }
+  
+  .dark body {
+    background-color: var(--color-stone-950, #020617);
+    color: var(--color-stone-200);
+    background-image: 
+      radial-gradient(at 0% 0%, rgba(200, 255, 0, 0.03) 0px, transparent 50%),
+      radial-gradient(at 100% 100%, rgba(255, 255, 255, 0.02) 0px, transparent 50%);
+  }
+}
+
+@layer utilities {
+  .apple-glass {
+    background: rgba(255, 255, 255, 0.75);
+    backdrop-filter: blur(24px);
+    -webkit-backdrop-filter: blur(24px);
+    border: 1px solid rgba(255, 255, 255, 0.5);
+    box-shadow: 0 8px 32px 0 rgba(15, 23, 42, 0.05), inset 0 1px 0 rgba(255,255,255,0.8);
+  }
+  
+  .dark .apple-glass {
+    background: rgba(15, 23, 42, 0.4);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.3), inset 0 1px 0 rgba(255,255,255,0.05);
+  }
+
+  .apple-glass-solid {
+    background: rgba(255, 255, 255, 0.90);
+    backdrop-filter: blur(32px);
+    -webkit-backdrop-filter: blur(32px);
+    border: 1px solid rgba(255, 255, 255, 0.8);
+    box-shadow: 0 4px 20px rgba(15, 23, 42, 0.04);
+  }
+
+  .dark .apple-glass-solid {
+    background: rgba(15, 23, 42, 0.75);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    box-shadow: 0 4px 20px rgba(0, 0, 0, 0.4);
+  }
+
+  /* Lenis smooth scrolling base styles */
+  html.lenis, html.lenis body {
+    height: auto;
+  }
+  .lenis.lenis-smooth {
+    scroll-behavior: auto !important;
+  }
+  .lenis.lenis-smooth [data-lenis-prevent] {
+    overscroll-behavior: contain;
+  }
+  .lenis.lenis-stopped {
+    overflow: hidden;
+  }
+  .lenis.lenis-scrolling iframe {
+    pointer-events: none;
+  }
+
+  .prose {
+    --tw-prose-body: var(--color-stone-700);
+    --tw-prose-headings: var(--color-stone-900);
   }
 }
 
@@ -52,8 +116,6 @@ body {
   margin: 0;
   padding: 0;
   font-family: var(--font-sans);
-  background-color: var(--color-dark-900);
-  color: var(--color-neutral-100);
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
 }
@@ -63,52 +125,79 @@ body {
   width: 6px;
 }
 ::-webkit-scrollbar-track {
-  background: var(--color-dark-800);
+  background: transparent;
 }
 ::-webkit-scrollbar-thumb {
-  background: var(--color-dark-400);
+  background: rgba(148, 163, 184, 0.3);
   border-radius: 3px;
 }
 ::-webkit-scrollbar-thumb:hover {
-  background: var(--color-lime-400);
+  background: rgba(148, 163, 184, 0.6);
 }
 
-/* Lime button */
-.btn-lime {
-  background: var(--color-lime-400);
-  color: var(--color-dark-900);
-  font-weight: 700;
-  transition: all 0.25s cubic-bezier(0.16, 1, 0.3, 1);
-}
-.btn-lime:hover {
-  background: var(--color-lime-500);
-  transform: translateY(-1px);
-  box-shadow: 0 4px 20px rgba(200, 255, 0, 0.25);
-}
-.btn-lime:active {
-  transform: translateY(1px);
+/* React Quill Light Glass Theme Overrides */
+.ql-toolbar.ql-snow {
+  border: 1px solid rgba(255,255,255,0.5) !important;
+  background: rgba(255,255,255,0.6) !important;
+  backdrop-filter: blur(12px) !important;
+  border-top-left-radius: 1.5rem !important;
+  border-top-right-radius: 1.5rem !important;
+  padding: 1rem !important;
 }
 
-/* Glass card */
-.glass-card {
-  background: rgba(26, 26, 26, 0.7);
-  backdrop-filter: blur(12px);
-  border: 1px solid rgba(255, 255, 255, 0.06);
+.dark .ql-toolbar.ql-snow {
+  border: 1px solid rgba(255,255,255,0.1) !important;
+  background: rgba(15, 23, 42, 0.5) !important;
 }
 
-/* Skeleton dark */
-.skeleton-dark {
-  background: linear-gradient(90deg, #1a1a1a 25%, #222222 50%, #1a1a1a 75%);
-  background-size: 200% 100%;
-  animation: shimmer 2s infinite linear;
+.ql-container.ql-snow {
+  border: 1px solid rgba(255,255,255,0.5) !important;
+  border-top: none !important;
+  background: rgba(255,255,255,0.4) !important;
+  border-bottom-left-radius: 1.5rem !important;
+  border-bottom-right-radius: 1.5rem !important;
+  font-family: var(--font-serif) !important;
+  font-size: 1.125rem !important;
+  color: var(--color-stone-800) !important;
 }
 
-/* Audio bar pulse */
-@keyframes barPulse {
-  0%, 100% { transform: scaleY(0.15); }
-  50% { transform: scaleY(1); }
+.dark .ql-container.ql-snow {
+  border: 1px solid rgba(255,255,255,0.1) !important;
+  border-top: none !important;
+  background: rgba(15, 23, 42, 0.3) !important;
+  color: var(--color-stone-200) !important;
 }
-.bar-pulse {
-  animation: barPulse 1.2s ease-in-out infinite;
-  transform-origin: bottom;
+
+.ql-snow .ql-picker {
+  color: var(--color-stone-700) !important;
+}
+.dark .ql-snow .ql-picker {
+  color: var(--color-stone-300) !important;
+}
+
+.ql-snow .ql-stroke {
+  stroke: var(--color-stone-700) !important;
+}
+.dark .ql-snow .ql-stroke {
+  stroke: var(--color-stone-300) !important;
+}
+
+.ql-snow .ql-fill {
+  fill: var(--color-stone-700) !important;
+}
+.dark .ql-snow .ql-fill {
+  fill: var(--color-stone-300) !important;
+}
+
+.ql-editor.ql-blank::before {
+  color: var(--color-stone-400) !important;
+  font-style: italic !important;
+}
+.dark .ql-editor.ql-blank::before {
+  color: var(--color-stone-500) !important;
+}
+
+.ql-editor {
+  padding: 1.5rem !important;
+  min-height: 400px;
 }

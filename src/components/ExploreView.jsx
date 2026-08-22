@@ -8,8 +8,13 @@ import { DESTINATIONS } from "../data/mockData";
 import { generateCulturalDiscovery, hasApiKey } from "../services/geminiService";
 import AnveshAudioVignette from "./AnveshAudioVignette";
 import AnveshDynamicMap from "./AnveshDynamicMap";
+import { useAuthStore } from "../store/authStore";
+import api from "../lib/api";
+import { useNavigate } from "react-router-dom";
 
 export default function ExploreView() {
+  const { isAuthenticated } = useAuthStore();
+  const navigate = useNavigate();
   const [selectedDest, setSelectedDest] = useState(null);
   const [activeResult, setActiveResult] = useState(null);
   const [loadingDiscovery, setLoadingDiscovery] = useState(false);
@@ -130,6 +135,29 @@ export default function ExploreView() {
         setTimeout(() => setToastMessage(null), 3500);
       }
     }, 800);
+  };
+
+  const handlePublish = async () => {
+    if (!isAuthenticated) {
+      navigate('/login');
+      return;
+    }
+    
+    setIsSaving(true);
+    try {
+      await api.post('/community/share', {
+        destination: activeResult.name || selectedDest,
+        data: JSON.stringify(activeResult)
+      });
+      setToastMessage("Trip published to Community Feed successfully!");
+      navigate('/community');
+    } catch (err) {
+      console.error(err);
+      setToastMessage("Failed to publish trip.");
+    } finally {
+      setIsSaving(false);
+      setTimeout(() => setToastMessage(null), 3500);
+    }
   };
 
   const isGenAIActive = hasApiKey() && !discoveryError;
@@ -304,6 +332,24 @@ export default function ExploreView() {
                       {activeResult.location} • {activeResult.coordinates}
                     </span>
                   </div>
+                </div>
+                <div className="flex gap-3 mt-4 sm:mt-0">
+                  <button 
+                    onClick={handlePublish}
+                    disabled={isSaving}
+                    className="px-4 py-2 border border-blue-500/30 bg-blue-50 hover:bg-blue-100 text-blue-700 rounded-xl text-xs font-bold flex items-center gap-1.5 transition-all shadow-sm cursor-pointer disabled:opacity-50"
+                  >
+                    <span>🌍</span>
+                    <span>{isSaving ? "Publishing..." : "Publish"}</span>
+                  </button>
+                  <button 
+                    onClick={handleSaveOffline}
+                    disabled={isSaving}
+                    className="px-4 py-2 border border-[#8ab836]/30 bg-white hover:bg-stone-50 text-[#8ab836] rounded-xl text-xs font-bold flex items-center gap-1.5 transition-all shadow-sm cursor-pointer disabled:opacity-50"
+                  >
+                    <span>💾</span>
+                    <span>Save</span>
+                  </button>
                 </div>
               </div>
 
