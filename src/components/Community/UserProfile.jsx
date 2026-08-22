@@ -7,6 +7,7 @@ import { Link } from 'react-router-dom';
 export default function UserProfile() {
   const { user, checkAuth } = useAuthStore();
   const [blogs, setBlogs] = useState([]);
+  const [loading, setLoading] = useState(true);
   const [isUploadingCover, setIsUploadingCover] = useState(false);
   const [isUploadingAvatar, setIsUploadingAvatar] = useState(false);
 
@@ -56,6 +57,8 @@ export default function UserProfile() {
         }
       } catch (err) {
         console.error(err);
+      } finally {
+        setLoading(false);
       }
     };
     if (user) fetchMyBlogs();
