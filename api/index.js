@@ -87,7 +87,7 @@ app.post('/api/auth/register', async (req, res) => {
     const token = jwt.sign({ id: newUser.id }, JWT_SECRET, { expiresIn: '7d' });
     res.status(201).json({
       token,
-      user: { id: newUser.id, email: newUser.email, username: newUser.username, travelStyle: newUser.travelStyle, bio: newUser.bio, profilePicture: newUser.profilePicture }
+      user: { id: newUser.id, email: newUser.email, username: newUser.username, travelStyle: newUser.travelStyle, bio: newUser.bio, profilePicture: newUser.profilePicture, onboardingComplete: newUser.onboardingComplete }
     });
   } catch (error) {
     res.status(500).json({ error: 'Server error during registration' });
@@ -106,7 +106,7 @@ app.post('/api/auth/login', async (req, res) => {
     const token = jwt.sign({ id: user.id }, JWT_SECRET, { expiresIn: '7d' });
     res.json({
       token,
-      user: { id: user.id, email: user.email, username: user.username, travelStyle: user.travelStyle, bio: user.bio, profilePicture: user.profilePicture }
+      user: { id: user.id, email: user.email, username: user.username, travelStyle: user.travelStyle, bio: user.bio, profilePicture: user.profilePicture, onboardingComplete: user.onboardingComplete }
     });
   } catch (error) {
     res.status(500).json({ error: 'Server error during login' });

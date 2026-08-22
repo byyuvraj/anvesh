@@ -22,7 +22,7 @@ export default function Register() {
     try {
       const { data } = await api.post('/auth/register', formData);
       setCredentials(data.user, data.token);
-      navigate('/');
+      navigate('/onboarding');
     } catch (err) {
       setError(err.response?.data?.error || 'Registration failed');
     } finally {

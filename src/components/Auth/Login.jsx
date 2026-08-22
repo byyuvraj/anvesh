@@ -19,7 +19,11 @@ export default function Login() {
     try {
       const { data } = await api.post('/auth/login', { email, password });
       setCredentials(data.user, data.token);
-      navigate('/');
+      if (data.user.onboardingComplete) {
+        navigate('/community');
+      } else {
+        navigate('/onboarding');
+      }
     } catch (err) {
       setError(err.response?.data?.error || 'Login failed');
     } finally {
