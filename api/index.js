@@ -1,12 +1,12 @@
-const express = require('express');
-const cors = require('cors');
-const dotenv = require('dotenv');
-const bcrypt = require('bcryptjs');
-const jwt = require('jsonwebtoken');
-const multer = require('multer');
-const path = require('path');
-const fs = require('fs');
-const { PrismaClient } = require('@prisma/client');
+import express from 'express';
+import cors from 'cors';
+import dotenv from 'dotenv';
+import bcrypt from 'bcryptjs';
+import jwt from 'jsonwebtoken';
+
+import path from 'path';
+import fs from 'fs';
+import { PrismaClient } from '@prisma/client';
 
 dotenv.config();
 
@@ -27,9 +27,7 @@ const JWT_SECRET = process.env.JWT_SECRET || 'anvesh_jwt_super_secret';
 app.use(cors());
 app.use(express.json({ limit: '10mb' }));
 
-// Removed local multer diskStorage since Vercel has a read-only filesystem.
-// To support image uploads on Vercel, you must integrate @vercel/blob here.
-const upload = multer(); // Memory storage for now. You should process req.file.buffer and upload to Vercel Blob.
+// File uploading is now handled directly by passing compressed Base64 strings to /api/auth/profile
 
 // --- Auth Middleware ---
 const authMiddleware = (req, res, next) => {
@@ -337,4 +335,4 @@ if (process.env.NODE_ENV !== 'production') {
 }
 
 // Export for Vercel Serverless
-module.exports = app;
+export default app;
