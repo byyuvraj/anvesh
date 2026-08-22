@@ -9,8 +9,7 @@ import { Image as ImageIcon, Loader2, ArrowLeft, Send, MapPin, Plus } from 'luci
 export default function WriteBlog() {
   const [title, setTitle] = useState('');
   const [content, setContent] = useState('');
-  const [coverImage, setCoverImage] = useState(null);
-  const [isUploading, setIsUploading] = useState(false);
+  const [coverImage, setCoverImage] = useState('');
   const [isPublishing, setIsPublishing] = useState(false);
   
   // Location selection
@@ -45,26 +44,7 @@ export default function WriteBlog() {
     );
   }
 
-  const handleImageUpload = async (e) => {
-    const file = e.target.files[0];
-    if (!file) return;
 
-    setIsUploading(true);
-    const formData = new FormData();
-    formData.append('image', file);
-
-    try {
-      const { data } = await api.post('/upload', formData, {
-        headers: { 'Content-Type': 'multipart/form-data' }
-      });
-      setCoverImage(data.url);
-    } catch (err) {
-      console.error("Failed to upload image", err);
-      alert("Failed to upload image");
-    } finally {
-      setIsUploading(false);
-    }
-  };
 
   const handleCreateLocation = async () => {
     if (!newLocationName.trim()) return null;
@@ -140,34 +120,29 @@ export default function WriteBlog() {
       {/* Editor Area */}
       <div className="apple-glass p-8 sm:p-12 rounded-[3rem] shadow-sm">
         
-        {/* Cover Image Upload */}
+        {/* Cover Image URL Input */}
         <div className="mb-10 relative group w-full">
           {coverImage ? (
-            <div className="relative w-full h-[300px] sm:h-[400px] rounded-[2rem] overflow-hidden shadow-lg border border-stone-200 dark:border-stone-800">
-              <img src={coverImage} alt="Cover" className="w-full h-full object-cover" />
-              <label className="absolute top-4 right-4 bg-white/80 dark:bg-stone-900/80 backdrop-blur-md hover:bg-white dark:hover:bg-stone-800 px-4 py-2 rounded-full text-xs font-bold text-stone-700 dark:text-stone-300 cursor-pointer transition-all shadow-sm border border-stone-200 dark:border-stone-700">
-                <input type="file" className="hidden" accept="image/*" onChange={handleImageUpload} disabled={isUploading} />
-                {isUploading ? <Loader2 className="w-4 h-4 animate-spin inline mr-1" /> : 'Replace Cover'}
-              </label>
+            <div className="relative w-full h-[300px] sm:h-[400px] rounded-[2rem] overflow-hidden shadow-lg border border-stone-200 dark:border-stone-800 mb-4">
+              <img src={coverImage} alt="Cover" className="w-full h-full object-cover" onError={() => setCoverImage('')} />
+              <button onClick={() => setCoverImage('')} className="absolute top-4 right-4 bg-white/80 dark:bg-stone-900/80 backdrop-blur-md hover:bg-white dark:hover:bg-stone-800 px-4 py-2 rounded-full text-xs font-bold text-stone-700 dark:text-stone-300 transition-all shadow-sm border border-stone-200 dark:border-stone-700">
+                Remove Cover
+              </button>
             </div>
           ) : (
-            <label className="flex flex-col items-center justify-center w-full h-[250px] border-2 border-dashed border-stone-300 dark:border-stone-700 rounded-[2rem] bg-white/50 dark:bg-stone-900/50 hover:bg-white dark:hover:bg-stone-800 transition-colors cursor-pointer">
-              <input type="file" className="hidden" accept="image/*" onChange={handleImageUpload} disabled={isUploading} />
-              {isUploading ? (
-                <div className="flex flex-col items-center gap-3">
-                  <Loader2 className="w-8 h-8 text-[#c8ff00] animate-spin" />
-                  <span className="text-sm font-bold text-stone-500 dark:text-stone-400">Uploading...</span>
-                </div>
-              ) : (
-                <>
-                  <div className="w-16 h-16 bg-stone-100 dark:bg-stone-800 border border-stone-200 dark:border-stone-700 rounded-full flex items-center justify-center mb-4 group-hover:scale-110 transition-transform">
-                    <ImageIcon className="w-6 h-6 text-stone-400 dark:text-stone-500" />
-                  </div>
-                  <span className="text-stone-700 dark:text-stone-300 font-bold">Upload a Cover Photo</span>
-                  <span className="text-xs text-stone-400 dark:text-stone-500 font-medium mt-1">Make your data point stand out</span>
-                </>
-              )}
-            </label>
+            <div className="flex flex-col items-center justify-center w-full h-[250px] border-2 border-dashed border-stone-300 dark:border-stone-700 rounded-[2rem] bg-white/50 dark:bg-stone-900/50 hover:bg-white dark:hover:bg-stone-800 transition-colors p-6 text-center">
+              <div className="w-16 h-16 bg-stone-100 dark:bg-stone-800 border border-stone-200 dark:border-stone-700 rounded-full flex items-center justify-center mb-4 group-hover:scale-110 transition-transform">
+                <ImageIcon className="w-6 h-6 text-stone-400 dark:text-stone-500" />
+              </div>
+              <span className="text-stone-700 dark:text-stone-300 font-bold mb-2">Add a Cover Photo</span>
+              <input 
+                type="url" 
+                placeholder="Paste an image URL here..." 
+                value={coverImage}
+                onChange={(e) => setCoverImage(e.target.value)}
+                className="w-full max-w-md bg-stone-50 dark:bg-stone-950 border border-stone-200 dark:border-stone-700 rounded-xl px-4 py-3 text-sm focus:outline-none focus:border-[#8ab836] dark:focus:border-[#c8ff00] transition-colors"
+              />
+            </div>
           )}
         </div>
 

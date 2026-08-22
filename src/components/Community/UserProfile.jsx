@@ -10,6 +10,43 @@ export default function UserProfile() {
   const [isUploadingCover, setIsUploadingCover] = useState(false);
   const [isUploadingAvatar, setIsUploadingAvatar] = useState(false);
 
+  // Helper to compress image and return a low-res base64 string
+  const compressImage = (file, maxWidth, maxHeight) => {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.readAsDataURL(file);
+      reader.onload = (event) => {
+        const img = new Image();
+        img.src = event.target.result;
+        img.onload = () => {
+          const canvas = document.createElement('canvas');
+          let width = img.width;
+          let height = img.height;
+          
+          if (width > height) {
+            if (width > maxWidth) {
+              height = Math.round((height * maxWidth) / width);
+              width = maxWidth;
+            }
+          } else {
+            if (height > maxHeight) {
+              width = Math.round((width * maxHeight) / height);
+              height = maxHeight;
+            }
+          }
+          
+          canvas.width = width;
+          canvas.height = height;
+          const ctx = canvas.getContext('2d');
+          ctx.drawImage(img, 0, 0, width, height);
+          resolve(canvas.toDataURL('image/jpeg', 0.6)); // High compression (low res)
+        };
+        img.onerror = reject;
+      };
+      reader.onerror = reject;
+    });
+  };
+
   useEffect(() => {
     const fetchMyBlogs = async () => {
       try {
@@ -31,16 +68,26 @@ export default function UserProfile() {
     if (!file) return;
 
     type === 'cover' ? setIsUploadingCover(true) : setIsUploadingAvatar(true);
-    const formData = new FormData();
-    formData.append('image', file);
-
+    
     try {
-      const { data } = await api.post('/upload', formData, {
-        headers: { 'Content-Type': 'multipart/form-data' }
-      });
-      alert(`Uploaded! URL: ${data.url}`);
+      // Compress the image before uploading to keep the DB footprint small
+      // Cover photos can be wider, avatars can be small squares
+      const maxW = type === 'cover' ? 800 : 300;
+      const maxH = type === 'cover' ? 400 : 300;
+      
+      const compressedBase64 = await compressImage(file, maxW, maxH);
+      
+      const payload = type === 'cover' 
+        ? { coverPhoto: compressedBase64 } 
+        : { profilePicture: compressedBase64 };
+
+      await api.put('/auth/profile', payload);
+      
+      // Refresh the user profile globally so the UI updates
+      await checkAuth();
     } catch (err) {
       console.error("Upload failed", err);
+      alert("Failed to update profile picture.");
     } finally {
       type === 'cover' ? setIsUploadingCover(false) : setIsUploadingAvatar(false);
     }

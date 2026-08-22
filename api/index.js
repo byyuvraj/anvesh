@@ -43,23 +43,30 @@ const authMiddleware = (req, res, next) => {
   } catch (err) {
     res.status(401).json({ error: 'Token is not valid' });
   }
-};
-
-// --- Upload Route ---
-app.post('/api/upload', authMiddleware, upload.single('image'), async (req, res) => {
-  if (!req.file) {
-    return res.status(400).json({ error: 'No image uploaded' });
-  }
-  
+// --- Profile Update Route ---
+app.put('/api/auth/profile', authMiddleware, async (req, res) => {
   try {
-    // VERCEL DEPLOYMENT NOTE:
-    // To handle uploads on Vercel, import { put } from '@vercel/blob'
-    // and upload req.file.buffer here. Return the resulting blob.url.
-    // For now, we return a placeholder or base64 (not recommended for production)
-    const base64Image = `data:${req.file.mimetype};base64,${req.file.buffer.toString('base64')}`;
-    res.json({ url: base64Image });
+    const { profilePicture, coverPhoto } = req.body;
+    
+    // Only update fields that are provided
+    const updateData = {};
+    if (profilePicture !== undefined) updateData.profilePicture = profilePicture;
+    if (coverPhoto !== undefined) updateData.coverPhoto = coverPhoto;
+
+    if (Object.keys(updateData).length === 0) {
+      return res.status(400).json({ error: 'No fields to update' });
+    }
+
+    const updatedUser = await prisma.user.update({
+      where: { id: req.user.id },
+      data: updateData,
+      select: { id: true, email: true, username: true, travelStyle: true, bio: true, profilePicture: true, coverPhoto: true }
+    });
+
+    res.json(updatedUser);
   } catch (err) {
-    res.status(500).json({ error: 'Upload failed' });
+    console.error("Profile update error:", err);
+    res.status(500).json({ error: 'Failed to update profile' });
   }
 });
 
