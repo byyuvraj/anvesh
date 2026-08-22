@@ -21,6 +21,7 @@ export default function WriteBlog() {
   
   const { isAuthenticated } = useAuthStore();
   const navigate = useNavigate();
+  const quillRef = React.useRef(null);
 
   useEffect(() => {
     const fetchLocations = async () => {
@@ -89,15 +90,29 @@ export default function WriteBlog() {
     }
   };
 
-  const modules = {
-    toolbar: [
-      [{ 'header': [1, 2, 3, false] }],
-      ['bold', 'italic', 'underline', 'strike', 'blockquote'],
-      [{'list': 'ordered'}, {'list': 'bullet'}],
-      ['link', 'image'],
-      ['clean']
-    ],
+  const imageHandler = () => {
+    const url = prompt('Please enter the image URL:');
+    if (url) {
+      const quill = quillRef.current.getEditor();
+      const range = quill.getSelection();
+      quill.insertEmbed(range ? range.index : 0, 'image', url);
+    }
   };
+
+  const modules = React.useMemo(() => ({
+    toolbar: {
+      container: [
+        [{ 'header': [1, 2, 3, false] }],
+        ['bold', 'italic', 'underline', 'strike', 'blockquote'],
+        [{'list': 'ordered'}, {'list': 'bullet'}],
+        ['link', 'image'],
+        ['clean']
+      ],
+      handlers: {
+        image: imageHandler
+      }
+    }
+  }), []);
 
   return (
     <div className="max-w-[900px] mx-auto py-10 px-4 animate-in fade-in duration-500">
@@ -210,6 +225,7 @@ export default function WriteBlog() {
         
         <div className="prose prose-lg sm:prose-xl max-w-none prose-p:font-serif prose-p:leading-loose text-stone-700 dark:text-stone-300 editor-container bg-white/40 dark:bg-stone-900/40 rounded-3xl p-4">
           <ReactQuill 
+            ref={quillRef}
             theme="snow" 
             value={content} 
             onChange={setContent} 
