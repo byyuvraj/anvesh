@@ -1,6 +1,9 @@
 import { PrismaClient } from '@prisma/client';
 import bcrypt from 'bcryptjs';
 import { users, locationHierarchy, generateBlogs } from './seedData.js';
+import { newLocations } from './newLocations.js';
+import { getStoriesPart1 } from './storiesPart1.js';
+import { getStoriesPart2 } from './storiesPart2.js';
 
 const prisma = new PrismaClient();
 
@@ -46,7 +49,9 @@ async function main() {
   console.log('📍 Seeding locations...');
   const locationsMap = {}; // Maps location name to real DB ID
   
-  for (const state of locationHierarchy) {
+  const allLocations = [...locationHierarchy, ...newLocations];
+
+  for (const state of allLocations) {
     const createdState = await prisma.location.create({
       data: {
         name: state.name,
@@ -73,7 +78,10 @@ async function main() {
 
   // 4. SEED BLOGS (Stories)
   console.log('📝 Seeding blogs and itineraries...');
-  const blogsToInsert = generateBlogs(usersMap, locationsMap);
+  const blogs1 = generateBlogs(usersMap, locationsMap);
+  const blogs2 = getStoriesPart1(usersMap, locationsMap);
+  const blogs3 = getStoriesPart2(usersMap, locationsMap);
+  const blogsToInsert = [...blogs1, ...blogs2, ...blogs3];
   const createdBlogs = [];
   
   for (const blog of blogsToInsert) {
