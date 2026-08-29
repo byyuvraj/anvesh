@@ -280,7 +280,7 @@ app.get('/api/locations/:id/insights', async (req, res) => {
     let aiSummary = '';
     
     try {
-      const ai = new GoogleGenerativeAI(process.env.VITE_GEMINI_API_KEY);
+      const ai = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
       const model = ai.getGenerativeModel({ model: 'gemini-1.5-flash' });
       
       const prompt = `You are an expert travel guide. The user is asking about the location "${location.name}". 
