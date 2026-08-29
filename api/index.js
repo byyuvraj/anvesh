@@ -3,6 +3,7 @@ import cors from 'cors';
 import dotenv from 'dotenv';
 import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
+import { GoogleGenerativeAI } from '@google/generative-ai';
 
 import path from 'path';
 import fs from 'fs';
@@ -249,6 +250,70 @@ app.post('/api/locations', authMiddleware, async (req, res) => {
   } catch (error) {
     console.error(error);
     res.status(500).json({ error: 'Server error creating location' });
+  }
+});
+
+// AI Location Insights Route
+app.get('/api/locations/:id/insights', async (req, res) => {
+  try {
+    const locationId = req.params.id;
+    const location = await prisma.location.findUnique({
+      where: { id: locationId },
+      include: {
+        blogs: {
+          include: { user: { select: { username: true } } },
+          orderBy: { createdAt: 'desc' },
+          take: 10
+        }
+      }
+    });
+
+    if (!location) {
+      return res.status(404).json({ error: 'Location not found' });
+    }
+
+    // Prepare context for AI
+    const communityTips = location.blogs.map(blog => 
+      `@${blog.user.username} says: "${blog.title}. ${blog.richContent.replace(/<[^>]+>/g, '').substring(0, 200)}..."`
+    ).join('\\n');
+
+    let aiSummary = '';
+    
+    try {
+      const ai = new GoogleGenerativeAI(process.env.VITE_GEMINI_API_KEY);
+      const model = ai.getGenerativeModel({ model: 'gemini-1.5-flash' });
+      
+      const prompt = `You are an expert travel guide. The user is asking about the location "${location.name}". 
+      First, provide a brief, engaging 2-sentence summary about this location from your own knowledge. 
+      Second, summarize the following community tips we have about this place, and explicitly cite the usernames (e.g. "As @username mentioned...") telling the reader to check out their full posts. 
+      Format the response using HTML (like <h3>, <p>, <ul>, <li>, <strong>) so it can be rendered directly in a rich text container. Don't use markdown code blocks.
+      
+      Community Tips:
+      ${communityTips || 'No community tips yet. Encourage the user to be the first to write one!'}`;
+
+      const result = await model.generateContent(prompt);
+      aiSummary = result.response.text();
+    } catch (aiError) {
+      console.error("Gemini AI Error (Invalid Key?):", aiError.message);
+      
+      // Fallback response if the API key is invalid or request fails
+      let fallbackTips = location.blogs.length > 0 
+        ? `<ul>${location.blogs.map(b => `<li><strong>@${b.user.username}</strong> shared: <em>${b.title}</em>. Read their post for more details!</li>`).join('')}</ul>` 
+        : '<p>Be the first to chart this territory and leave a tip!</p>';
+        
+      aiSummary = `
+        <h3>About ${location.name}</h3>
+        <p>${location.description || location.name + ' is a fantastic destination waiting to be explored.'} This is a mocked AI summary because the provided Gemini API key was invalid. Update the key in your .env file for dynamic AI generation!</p>
+        <h4 style="margin-top: 1rem; color: #8ab836;">Community Insights</h4>
+        <p>Our explorers have shared some amazing tips for this location:</p>
+        ${fallbackTips}
+      `;
+    }
+
+    res.json({ summary: aiSummary });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ error: 'Server error generating insights' });
   }
 });
 

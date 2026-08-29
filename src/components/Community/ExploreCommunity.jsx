@@ -1,8 +1,51 @@
 import React, { useEffect, useState } from 'react';
 import { useAuthStore } from '../../store/authStore';
 import api from '../../lib/api';
-import { Search, MapPin, Compass, MessageCircle, PenTool, Navigation } from 'lucide-react';
+import { Search, MapPin, Compass, MessageCircle, PenTool, Navigation, Sparkles } from 'lucide-react';
 import { Link, useNavigate } from 'react-router-dom';
+import parse from 'html-react-parser';
+
+const LocationInsight = ({ locationId }) => {
+  const [insight, setInsight] = useState('');
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    const fetchInsight = async () => {
+      try {
+        const { data } = await api.get(`/locations/${locationId}/insights`);
+        setInsight(data.summary);
+      } catch (err) {
+        console.error(err);
+        setInsight('<p>Failed to load AI insights.</p>');
+      } finally {
+        setLoading(false);
+      }
+    };
+    fetchInsight();
+  }, [locationId]);
+
+  return (
+    <div className="mb-8 p-6 rounded-3xl bg-gradient-to-br from-stone-900 to-stone-800 dark:from-stone-800 dark:to-stone-900 border border-[#8ab836]/30 shadow-lg relative overflow-hidden group">
+      <div className="absolute top-0 right-0 w-32 h-32 bg-[#c8ff00] opacity-5 rounded-full filter blur-2xl group-hover:opacity-10 transition-opacity"></div>
+      
+      <div className="flex items-center gap-2 mb-4">
+        <Sparkles className="w-5 h-5 text-[#c8ff00]" />
+        <h3 className="text-[#c8ff00] font-black tracking-widest uppercase text-sm">AI Community Summary</h3>
+      </div>
+      
+      {loading ? (
+        <div className="flex items-center gap-3 text-stone-400">
+          <div className="w-4 h-4 border-2 border-[#c8ff00] border-t-transparent rounded-full animate-spin"></div>
+          <span className="text-sm font-medium animate-pulse">Gemini is analyzing community data...</span>
+        </div>
+      ) : (
+        <div className="text-stone-200 prose prose-invert prose-p:leading-relaxed prose-a:text-[#c8ff00] prose-a:no-underline hover:prose-a:underline prose-h3:text-white prose-h3:text-xl prose-h3:font-black prose-h3:mb-3 prose-h4:text-[#c8ff00] prose-li:text-stone-300 max-w-none">
+          {parse(insight)}
+        </div>
+      )}
+    </div>
+  );
+};
 
 export default function ExploreCommunity() {
   const { user, isAuthenticated } = useAuthStore();
@@ -168,6 +211,9 @@ export default function ExploreCommunity() {
                   </div>
                   
                   {location.description && <p className="text-stone-600 dark:text-stone-400 mb-8 max-w-3xl">{location.description}</p>}
+
+                  {/* AI INSIGHTS FEATURE */}
+                  <LocationInsight locationId={location.id} />
 
                   {/* Stories for this specific location */}
                   {location.blogs?.length > 0 && (
