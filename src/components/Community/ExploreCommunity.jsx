@@ -80,23 +80,32 @@ export default function ExploreCommunity() {
     fetchFeed();
   }, []);
 
-  // Handle Search
-  const handleSearch = async (e) => {
+  // Debounced Search Effect
+  useEffect(() => {
+    const timer = setTimeout(async () => {
+      if (!searchQuery.trim()) {
+        setRecommendations([]);
+        return;
+      }
+      setIsSearching(true);
+      try {
+        const { data } = await api.get(`/recommendations?query=${encodeURIComponent(searchQuery.trim())}`);
+        setRecommendations(data);
+      } catch (err) {
+        console.error(err);
+      } finally {
+        setIsSearching(false);
+      }
+    }, 400); // 400ms debounce
+
+    return () => clearTimeout(timer);
+  }, [searchQuery]);
+
+  // Handle Search (manual submit)
+  const handleSearch = (e) => {
     e.preventDefault();
-    if (!searchQuery.trim()) {
-      setRecommendations([]);
-      return;
-    }
-    
-    setIsSearching(true);
-    try {
-      const { data } = await api.get(`/recommendations?query=${encodeURIComponent(searchQuery)}`);
-      setRecommendations(data);
-    } catch (err) {
-      console.error(err);
-    } finally {
-      setIsSearching(false);
-    }
+    // The debounce effect will handle the actual fetching, 
+    // but this prevents the page from reloading on enter.
   };
 
   const renderBlogCard = (blog, isFeatured = false) => {
