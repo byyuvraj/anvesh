@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { useAuthStore } from '../../store/authStore';
 import api from '../../lib/api';
+import CoverImage from './CoverImage';
 import { Navigation, MessageCircle, ArrowRight, PenTool } from 'lucide-react';
 import { Link } from 'react-router-dom';
 
@@ -76,13 +77,12 @@ export default function BlogFeed() {
               <Link key={blog.id} to={`/blog/${blog.id}`} className={`group relative rounded-[2rem] overflow-hidden transition-all duration-500 flex flex-col ${colSpan} bg-white border border-stone-200 hover:shadow-xl hover:border-stone-300`}>
                 
                 <div className={`${imageHeight} w-full overflow-hidden relative`}>
-                  {blog.coverImage ? (
-                    <img src={blog.coverImage} alt={blog.title} className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-[1.5s] ease-out" />
-                  ) : (
-                    <div className="w-full h-full flex items-center justify-center bg-stone-100 text-stone-300">
-                      <Navigation className="w-12 h-12" />
-                    </div>
-                  )}
+                  <CoverImage 
+                    src={blog.coverImage} 
+                    alt={blog.title} 
+                    locationName={blog.location?.name}
+                    className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-[1.5s] ease-out" 
+                  />
                   <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-transparent to-transparent opacity-80" />
                   
                   {/* Floating Author Pill */}

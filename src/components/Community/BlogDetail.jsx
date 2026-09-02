@@ -4,6 +4,7 @@ import api from '../../lib/api';
 import parse from 'html-react-parser';
 import { MessageCircle, ArrowLeft, Send, Sparkles } from 'lucide-react';
 import { useAuthStore } from '../../store/authStore';
+import CoverImage from './CoverImage';
 
 export default function BlogDetail() {
   const { id } = useParams();
@@ -90,11 +91,14 @@ export default function BlogDetail() {
       </div>
 
       {/* Hero Cover Image */}
-      {blog.coverImage && (
-        <div className="w-full max-w-[1200px] mx-auto h-[400px] sm:h-[600px] rounded-[2rem] overflow-hidden mb-16 shadow-xl relative group border border-stone-200 dark:border-stone-800">
-          <img src={blog.coverImage} alt={blog.title} className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-1000" />
-        </div>
-      )}
+      <div className="w-full max-w-[1200px] mx-auto h-[400px] sm:h-[600px] rounded-[2rem] overflow-hidden mb-16 shadow-xl relative group border border-stone-200 dark:border-stone-800">
+        <CoverImage 
+          src={blog.coverImage} 
+          alt={blog.title} 
+          locationName={blog.location?.name}
+          className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-1000" 
+        />
+      </div>
 
       <div className="max-w-[800px] mx-auto w-full px-4 lg:px-0">
         

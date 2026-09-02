@@ -1,9 +1,10 @@
 import React, { useEffect, useState } from 'react';
 import { useAuthStore } from '../../store/authStore';
 import api from '../../lib/api';
-import { Search, MapPin, Compass, MessageCircle, PenTool, Navigation, Sparkles } from 'lucide-react';
+import { Search, MapPin, Compass, MessageCircle, Navigation, Sparkles, PenTool } from 'lucide-react';
 import { Link, useNavigate } from 'react-router-dom';
 import parse from 'html-react-parser';
+import CoverImage from './CoverImage';
 
 const LocationInsight = ({ locationId }) => {
   const [insight, setInsight] = useState('');
@@ -115,13 +116,12 @@ export default function ExploreCommunity() {
     return (
       <Link key={blog.id} to={`/blog/${blog.id}`} className={`group relative rounded-[2rem] overflow-hidden transition-all duration-500 flex flex-col ${colSpan} bg-white dark:bg-stone-900 border border-stone-200 dark:border-stone-800 hover:shadow-xl hover:-translate-y-1`}>
         <div className={`${imageHeight} w-full overflow-hidden relative`}>
-          {blog.coverImage ? (
-            <img src={blog.coverImage} alt={blog.title} className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-[1.5s] ease-out" />
-          ) : (
-            <div className="w-full h-full flex items-center justify-center bg-stone-100 dark:bg-stone-800 text-stone-300 dark:text-stone-600">
-              <Compass className="w-12 h-12" />
-            </div>
-          )}
+          <CoverImage 
+            src={blog.coverImage} 
+            alt={blog.title} 
+            locationName={blog.location?.name}
+            className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-[1.5s] ease-out" 
+          />
           {blog.location && (
             <div className="absolute top-4 right-4 bg-white/90 dark:bg-stone-900/90 backdrop-blur-sm px-3 py-1.5 rounded-full flex items-center gap-1.5 shadow-sm border border-white/20 dark:border-stone-700">
               <MapPin className="w-3.5 h-3.5 text-[#8ab836]" />
@@ -248,7 +248,12 @@ export default function ExploreCommunity() {
                               {child.blogs?.map(blog => (
                                 <Link key={blog.id} to={`/blog/${blog.id}`} className="flex items-center gap-4 group">
                                   <div className="w-16 h-16 rounded-2xl overflow-hidden bg-stone-200 dark:bg-stone-700 flex-shrink-0">
-                                    {blog.coverImage && <img src={blog.coverImage} className="w-full h-full object-cover" />}
+                                    <CoverImage 
+                                      src={blog.coverImage} 
+                                      alt={blog.title} 
+                                      locationName={blog.location?.name}
+                                      className="w-full h-full object-cover" 
+                                    />
                                   </div>
                                   <div>
                                     <h6 className="font-bold text-stone-900 dark:text-stone-200 text-sm group-hover:text-[#8ab836] line-clamp-1">{blog.title}</h6>

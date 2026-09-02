@@ -5,6 +5,7 @@ import { Camera, Edit3, Settings, BarChart2, BookOpen } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { Radar, RadarChart, PolarGrid, PolarAngleAxis, PolarRadiusAxis, ResponsiveContainer, BarChart, Bar, XAxis, YAxis, Tooltip } from 'recharts';
 import India from '@react-map/india';
+import CoverImage from './CoverImage';
 
 export default function UserProfile() {
   const { user, checkAuth } = useAuthStore();
@@ -282,13 +283,12 @@ export default function UserProfile() {
             blogs.map(blog => (
               <Link key={blog.id} to={`/blog/${blog.id}`} className="group apple-glass rounded-[2rem] hover:shadow-xl hover:border-stone-300 dark:hover:border-stone-600 transition-all flex flex-col overflow-hidden border border-stone-200 dark:border-stone-800">
                 <div className="h-56 w-full overflow-hidden relative">
-                  {blog.coverImage ? (
-                    <img src={blog.coverImage} alt={blog.title} className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-700 ease-out" />
-                  ) : (
-                    <div className="w-full h-full flex items-center justify-center bg-white/50 dark:bg-stone-900/50 text-stone-300 dark:text-stone-600">
-                      <Edit3 className="w-8 h-8 opacity-50" />
-                    </div>
-                  )}
+                  <CoverImage 
+                    src={blog.coverImage} 
+                    alt={blog.title} 
+                    locationName={blog.location?.name}
+                    className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-700 ease-out" 
+                  />
                 </div>
                 <div className="p-6">
                   <span className="text-[10px] text-stone-400 dark:text-stone-500 font-bold block mb-2 tracking-widest uppercase">{new Date(blog.createdAt).toLocaleDateString()}</span>
