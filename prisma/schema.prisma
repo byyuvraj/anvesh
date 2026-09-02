@@ -61,6 +61,12 @@ model Blog {
   locationId  String?
   location    Location? @relation(fields: [locationId], references: [id])
 
+  // ML & Data Features
+  tags        String[]
+  readingTime Int?
+  aiSummary   String?
+  matchScore  Float?    // Transient or cached score for some feeds
+
   createdAt   DateTime  @default(now())
   comments    Comment[]
 }

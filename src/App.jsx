@@ -8,7 +8,8 @@ import Register from "./components/Auth/Register";
 import WriteBlog from "./components/Community/WriteBlog";
 import BlogDetail from "./components/Community/BlogDetail";
 import UserProfile from "./components/Community/UserProfile";
-import { Map, LogOut, UserCircle, Sun, Moon } from "lucide-react";
+import SmartItinerary from "./components/Community/SmartItinerary";
+import { Map, LogOut, UserCircle, Sun, Moon, Sparkles } from "lucide-react";
 import { useAuthStore } from "./store/authStore";
 import { useThemeStore } from "./store/themeStore";
 import { ReactLenis } from 'lenis/react';
@@ -53,6 +54,9 @@ function AppContent() {
                   <Link to="/community" className="text-sm font-bold text-stone-600 dark:text-stone-400 hover:text-stone-900 dark:hover:text-stone-200 transition-colors flex items-center gap-1.5">
                     <Map className="w-3.5 h-3.5" /> Explorer
                   </Link>
+                  <Link to="/planner" className="text-sm font-bold text-[#8ab836] hover:text-[#7a9d2c] transition-colors flex items-center gap-1.5 bg-[#8ab836]/10 px-3 py-1.5 rounded-full">
+                    <Sparkles className="w-3.5 h-3.5" /> AI Planner
+                  </Link>
                   <div className="h-4 w-px bg-stone-200 dark:bg-stone-700 mx-1"></div>
                   <div className="flex items-center gap-5">
                     <Link to="/profile" className="text-xs font-bold text-stone-600 dark:text-stone-400 hover:text-stone-900 dark:hover:text-stone-200 flex items-center gap-2 transition-colors">
@@ -87,6 +91,7 @@ function AppContent() {
               <Route path="/" element={<LandingPage />} />
               <Route path="/onboarding" element={<Onboarding />} />
               <Route path="/community" element={<ExploreCommunity />} />
+              <Route path="/planner" element={<SmartItinerary />} />
               <Route path="/write" element={<WriteBlog />} />
               <Route path="/blog/:id" element={<BlogDetail />} />
               <Route path="/profile" element={<UserProfile />} />

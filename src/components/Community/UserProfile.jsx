@@ -1,15 +1,37 @@
 import React, { useEffect, useState } from 'react';
 import { useAuthStore } from '../../store/authStore';
 import api from '../../lib/api';
-import { Camera, Edit3, Settings } from 'lucide-react';
+import { Camera, Edit3, Settings, BarChart2, BookOpen } from 'lucide-react';
 import { Link } from 'react-router-dom';
+import { Radar, RadarChart, PolarGrid, PolarAngleAxis, PolarRadiusAxis, ResponsiveContainer, BarChart, Bar, XAxis, YAxis, Tooltip } from 'recharts';
+import India from '@react-map/india';
 
 export default function UserProfile() {
   const { user, checkAuth } = useAuthStore();
   const [blogs, setBlogs] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [activeTab, setActiveTab] = useState('data'); // 'data' or 'analytics'
+  const [visitedStates, setVisitedStates] = useState({});
   const [isUploadingCover, setIsUploadingCover] = useState(false);
   const [isUploadingAvatar, setIsUploadingAvatar] = useState(false);
+
+  // Mocked ML Analytics Data (In a real app, this would be computed by the backend based on their blogs)
+  const personaData = [
+    { subject: 'Adventure', A: 85, fullMark: 100 },
+    { subject: 'Culture', A: 60, fullMark: 100 },
+    { subject: 'Relaxation', A: 45, fullMark: 100 },
+    { subject: 'Nature', A: 90, fullMark: 100 },
+    { subject: 'Nightlife', A: 30, fullMark: 100 },
+  ];
+
+  const activityData = [
+    { name: 'Jan', blogs: 1 },
+    { name: 'Feb', blogs: 0 },
+    { name: 'Mar', blogs: 3 },
+    { name: 'Apr', blogs: 2 },
+    { name: 'May', blogs: 5 },
+    { name: 'Jun', blogs: 4 },
+  ];
 
   // Helper to compress image and return a low-res base64 string
   const compressImage = (file, maxWidth, maxHeight) => {
@@ -53,7 +75,18 @@ export default function UserProfile() {
       try {
         const { data } = await api.get('/blogs');
         if (user) {
-          setBlogs(data.filter(b => b.userId === user.id));
+          const myBlogs = data.filter(b => b.userId === user.id);
+          setBlogs(myBlogs);
+          
+          // Calculate visited states for the map
+          const stateColors = {};
+          myBlogs.forEach(blog => {
+            const stateName = blog.location?.parent?.name || blog.location?.name;
+            if (stateName) {
+              stateColors[stateName] = '#8ab836'; // Green
+            }
+          });
+          setVisitedStates(stateColors);
         }
       } catch (err) {
         console.error(err);
@@ -166,15 +199,78 @@ export default function UserProfile() {
       </div>
 
       {/* Tabs */}
-      <div className="flex justify-center border-b border-stone-200/50 dark:border-stone-800/50 mt-4 mb-8 sticky top-24 z-30 bg-white/50 dark:bg-stone-950/50 backdrop-blur-md px-4 py-2 rounded-full mx-auto w-fit">
-        <button className="px-6 py-2.5 font-black text-stone-900 dark:text-white bg-white dark:bg-stone-900 rounded-full shadow-sm text-sm border border-stone-200 dark:border-stone-700">
-          Data Points
+      <div className="flex justify-center border-b border-stone-200/50 dark:border-stone-800/50 mt-4 mb-8 sticky top-24 z-30 bg-white/50 dark:bg-stone-950/50 backdrop-blur-md px-4 py-2 rounded-full mx-auto w-fit gap-2">
+        <button 
+          onClick={() => setActiveTab('data')}
+          className={`px-6 py-2.5 font-black rounded-full shadow-sm text-sm border flex items-center gap-2 transition-all ${activeTab === 'data' ? 'bg-stone-900 text-white border-stone-900 dark:bg-white dark:text-stone-900' : 'bg-white text-stone-600 border-stone-200 dark:bg-stone-900 dark:text-stone-400 dark:border-stone-700'}`}
+        >
+          <BookOpen className="w-4 h-4" /> Data Points
+        </button>
+        <button 
+          onClick={() => setActiveTab('analytics')}
+          className={`px-6 py-2.5 font-black rounded-full shadow-sm text-sm border flex items-center gap-2 transition-all ${activeTab === 'analytics' ? 'bg-[#c8ff00] text-stone-900 border-[#c8ff00]' : 'bg-white text-stone-600 border-stone-200 dark:bg-stone-900 dark:text-stone-400 dark:border-stone-700'}`}
+        >
+          <BarChart2 className="w-4 h-4" /> Travel Analytics
         </button>
       </div>
 
-      {/* Blog Grid */}
-      {loading ? (
-        <div className="text-center py-20 font-bold text-stone-400 dark:text-stone-500">Loading journal...</div>
+      {activeTab === 'analytics' && (
+        <>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-8 animate-in slide-in-from-bottom-4 duration-500">
+            <div className="apple-glass p-8 rounded-[2.5rem] border border-stone-200 dark:border-stone-800 flex flex-col items-center">
+            <h3 className="text-xl font-black text-stone-900 dark:text-white mb-2">Traveler Persona (ML)</h3>
+            <p className="text-sm font-medium text-stone-500 mb-6 text-center">Computed via Semantic Tag Analysis</p>
+            <div className="w-full h-72">
+              <ResponsiveContainer width="100%" height="100%">
+                <RadarChart cx="50%" cy="50%" outerRadius="80%" data={personaData}>
+                  <PolarGrid stroke="#e5e7eb" />
+                  <PolarAngleAxis dataKey="subject" tick={{ fill: '#78716c', fontSize: 12, fontWeight: 'bold' }} />
+                  <Radar name="Persona" dataKey="A" stroke="#8ab836" fill="#c8ff00" fillOpacity={0.6} />
+                </RadarChart>
+              </ResponsiveContainer>
+            </div>
+          </div>
+
+          <div className="apple-glass p-8 rounded-[2.5rem] border border-stone-200 dark:border-stone-800 flex flex-col items-center">
+            <h3 className="text-xl font-black text-stone-900 dark:text-white mb-2">Exploration Velocity</h3>
+            <p className="text-sm font-medium text-stone-500 mb-6 text-center">Data points published over time</p>
+            <div className="w-full h-72">
+              <ResponsiveContainer width="100%" height="100%">
+                <BarChart data={activityData} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
+                  <XAxis dataKey="name" tick={{ fill: '#78716c', fontSize: 12 }} axisLine={false} tickLine={false} />
+                  <YAxis tick={{ fill: '#78716c', fontSize: 12 }} axisLine={false} tickLine={false} />
+                  <Tooltip cursor={{ fill: '#f5f5f4' }} contentStyle={{ borderRadius: '12px', border: 'none', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)' }} />
+                  <Bar dataKey="blogs" fill="#8ab836" radius={[6, 6, 0, 0]} />
+                </BarChart>
+              </ResponsiveContainer>
+            </div>
+          </div>
+        </div>
+        
+        {/* Geographic Footprint Map */}
+        <div className="mt-8 apple-glass p-8 rounded-[2.5rem] border border-stone-200 dark:border-stone-800 flex flex-col items-center w-full animate-in slide-in-from-bottom-4 duration-700">
+           <h3 className="text-xl font-black text-stone-900 dark:text-white mb-2">Explored Territories</h3>
+           <p className="text-sm font-medium text-stone-500 mb-6 text-center">Your geographic footprint across India</p>
+           <div className="w-full max-w-lg flex justify-center overflow-hidden">
+             <India 
+                type="select-single" 
+                size={400} 
+                mapColor="#e5e7eb" 
+                strokeColor="#ffffff" 
+                strokeWidth={1} 
+                hoverColor="#c8ff00" 
+                cityColors={visitedStates} 
+             />
+           </div>
+        </div>
+        </>
+      )}
+
+      {activeTab === 'data' && (
+        <>
+          {/* Blog Grid */}
+          {loading ? (
+            <div className="text-center py-20 font-bold text-stone-400 dark:text-stone-500">Loading journal...</div>
       ) : (
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
           {blogs.length === 0 ? (
@@ -202,6 +298,8 @@ export default function UserProfile() {
             ))
           )}
         </div>
+        )}
+        </>
       )}
 
     </div>

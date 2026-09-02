@@ -7,12 +7,13 @@ import { Link } from 'react-router-dom';
 export default function BlogFeed() {
   const [blogs, setBlogs] = useState([]);
   const [loading, setLoading] = useState(true);
-  const { isAuthenticated } = useAuthStore();
+  const { isAuthenticated, user } = useAuthStore();
 
   useEffect(() => {
     const fetchBlogs = async () => {
       try {
-        const { data } = await api.get('/blogs');
+        const url = isAuthenticated && user ? `/blogs?userId=${user.id}` : '/blogs';
+        const { data } = await api.get(url);
         setBlogs(data);
       } catch (err) {
         console.error("Failed to fetch blogs", err);
@@ -99,8 +100,30 @@ export default function BlogFeed() {
                   {/* Text on Image for Featured */}
                   {isFeatured && (
                     <div className="absolute bottom-0 left-0 right-0 p-8 sm:p-12 z-10 flex flex-col">
-                      <span className="text-white font-bold text-xs uppercase tracking-widest mb-3 bg-[#8ab836] w-fit px-3 py-1 rounded-full">Featured Story</span>
+                      <div className="flex flex-wrap gap-2 mb-3">
+                        <span className="text-white font-bold text-xs uppercase tracking-widest bg-[#8ab836] px-3 py-1 rounded-full">Featured Story</span>
+                        {blog.matchScore && (
+                          <span className="text-stone-900 font-bold text-xs uppercase tracking-widest bg-[#c8ff00] px-3 py-1 rounded-full flex items-center gap-1 shadow-md">
+                            ✨ {blog.matchScore}% Match
+                          </span>
+                        )}
+                        {blog.readingTime && (
+                          <span className="text-white font-bold text-xs bg-black/40 backdrop-blur-sm px-3 py-1 rounded-full border border-white/20">
+                            {blog.readingTime} min read
+                          </span>
+                        )}
+                      </div>
+                      
                       <h3 className="font-black text-4xl sm:text-5xl text-white leading-tight font-serif drop-shadow-lg">{blog.title}</h3>
+                      
+                      {blog.tags && blog.tags.length > 0 && (
+                        <div className="flex flex-wrap gap-2 mt-3">
+                          {blog.tags.map(tag => (
+                            <span key={tag} className="text-xs font-bold text-white/90 bg-white/10 px-2 py-0.5 rounded-md border border-white/20">{tag}</span>
+                          ))}
+                        </div>
+                      )}
+
                       <div className="mt-4 flex items-center gap-4 text-white/80 text-sm font-bold">
                         <span>{new Date(blog.createdAt).toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })}</span>
                         <span className="w-1.5 h-1.5 rounded-full bg-white/50" />
@@ -113,22 +136,40 @@ export default function BlogFeed() {
                 {!isFeatured && (
                   <div className="p-6 sm:p-8 flex flex-col flex-grow z-10 relative">
                     <div className="flex justify-between items-start mb-4">
-                      <span className="text-[10px] font-bold text-stone-600 bg-stone-100 border border-stone-200 px-2 py-1 rounded uppercase tracking-widest">
-                        {blog.user.travelStyle || 'Traveler'}
-                      </span>
+                      <div className="flex gap-2 items-center">
+                        <span className="text-[10px] font-bold text-stone-600 bg-stone-100 border border-stone-200 px-2 py-1 rounded uppercase tracking-widest">
+                          {blog.user.travelStyle || 'Traveler'}
+                        </span>
+                        {blog.matchScore && (
+                          <span className="text-[10px] font-bold text-stone-900 bg-[#c8ff00] px-2 py-1 rounded uppercase tracking-widest flex items-center gap-1 shadow-sm">
+                            ✨ {blog.matchScore}% Match
+                          </span>
+                        )}
+                      </div>
                       <span className="text-[10px] font-bold text-stone-400">{new Date(blog.createdAt).toLocaleDateString()}</span>
                     </div>
                     
                     <h3 className="font-black text-2xl text-stone-900 leading-tight group-hover:text-[#8ab836] transition-colors font-serif line-clamp-3">
                       {blog.title}
                     </h3>
+
+                    {blog.tags && blog.tags.length > 0 && (
+                      <div className="flex flex-wrap gap-1.5 mt-2">
+                        {blog.tags.map(tag => (
+                          <span key={tag} className="text-[10px] font-bold text-stone-500 bg-stone-100 px-2 py-0.5 rounded-md border border-stone-200">{tag}</span>
+                        ))}
+                      </div>
+                    )}
                     
-                    <div className="mt-4 text-sm text-stone-500 line-clamp-3 leading-relaxed flex-grow font-serif">
-                       {blog.richContent.replace(/<[^>]+>/g, '')}
+                    <div className="mt-3 text-sm text-stone-500 line-clamp-2 leading-relaxed flex-grow font-serif">
+                       {blog.aiSummary || blog.richContent.replace(/<[^>]+>/g, '')}
                     </div>
 
-                    <div className="mt-6 pt-4 border-t border-stone-100 flex justify-between items-center text-xs font-bold text-stone-400 group-hover:text-[#8ab836] transition-colors">
-                      <span className="flex items-center gap-2">Read Article <ArrowRight className="w-4 h-4 transform group-hover:translate-x-1 transition-transform" /></span>
+                    <div className="mt-5 pt-4 border-t border-stone-100 flex justify-between items-center text-xs font-bold text-stone-400 group-hover:text-[#8ab836] transition-colors">
+                      <span className="flex items-center gap-2">
+                        {blog.readingTime ? `${blog.readingTime} min read` : 'Read Article'} 
+                        <ArrowRight className="w-4 h-4 transform group-hover:translate-x-1 transition-transform" />
+                      </span>
                       <span className="flex items-center gap-1.5"><MessageCircle className="w-4 h-4" /> {blog._count?.comments || 0}</span>
                     </div>
                   </div>

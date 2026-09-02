@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { useParams, Link } from 'react-router-dom';
+import { useParams, Link, useNavigate } from 'react-router-dom';
 import api from '../../lib/api';
 import parse from 'html-react-parser';
 import { MessageCircle, ArrowLeft, Send, Sparkles } from 'lucide-react';
@@ -12,6 +12,7 @@ export default function BlogDetail() {
   const [commentText, setCommentText] = useState('');
   const [submittingComment, setSubmittingComment] = useState(false);
   const { isAuthenticated, user } = useAuthStore();
+  const navigate = useNavigate();
 
   const fetchBlog = async () => {
     try {

@@ -44,6 +44,77 @@ const authMiddleware = (req, res, next) => {
   }
 };
 
+// --- AI & Data Features ---
+
+// AI Itinerary Generator
+app.post('/api/ai/itinerary', async (req, res) => {
+  try {
+    const { destination, days, vibe, budget, groupSize } = req.body;
+    
+    if (!destination || !days) {
+      return res.status(400).json({ error: 'Destination and days are required' });
+    }
+
+    if (!process.env.GEMINI_API_KEY) {
+      // Mocked fallback for Viva presentation if API key fails
+      return res.json({
+        title: `Your ${days}-Day ${vibe || 'Epic'} Trip to ${destination}`,
+        days: Array.from({ length: parseInt(days) }).map((_, i) => ({
+          day: i + 1,
+          theme: "Exploring the Highlights",
+          activities: [
+            { time: "09:00 AM", activity: "Local Breakfast & Orientation", cost: "Low" },
+            { time: "11:00 AM", activity: "Main Attraction Visit", cost: "Medium" },
+            { time: "02:00 PM", activity: "Lunch at a traditional spot", cost: "Medium" },
+            { time: "04:00 PM", activity: "Leisure Walk / Shopping", cost: "Low" },
+            { time: "07:30 PM", activity: "Dinner & Nightlife", cost: "High" }
+          ],
+          dailyTip: "Stay hydrated and wear comfortable walking shoes!"
+        }))
+      });
+    }
+
+    const ai = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
+    const model = ai.getGenerativeModel({ model: 'gemini-1.5-flash' });
+    
+    const prompt = `
+      You are an expert AI travel planner. Create a highly detailed, ${days}-day itinerary for ${destination}.
+      Preferences:
+      - Vibe: ${vibe || 'Balanced'}
+      - Budget: ${budget || 'Moderate'}
+      - Group Size: ${groupSize || 'Solo'}
+      
+      Respond EXACTLY with the following JSON structure (NO MARKDOWN WRAPPERS, RAW JSON ONLY):
+      {
+        "title": "A catchy title for the trip",
+        "days": [
+          {
+            "day": 1,
+            "theme": "Theme of the day (e.g. History & Culture)",
+            "activities": [
+              { "time": "09:00 AM", "activity": "Specific Activity Details", "cost": "Estimated Cost (e.g. $20 or Low)" }
+            ],
+            "dailyTip": "A useful tip for this specific day"
+          }
+        ]
+      }
+    `;
+
+    const result = await model.generateContent(prompt);
+    let rawText = result.response.text().trim();
+    if (rawText.startsWith('```json')) {
+      rawText = rawText.replace(/```json/, '').replace(/```/, '').trim();
+    }
+    
+    const parsedItinerary = JSON.parse(rawText);
+    res.json(parsedItinerary);
+
+  } catch (error) {
+    console.error('AI Itinerary Error:', error);
+    res.status(500).json({ error: 'Failed to generate itinerary. Try again later.' });
+  }
+});
+
 // --- Profile Update Route ---
 app.put('/api/auth/profile', authMiddleware, async (req, res) => {
   try {
@@ -124,6 +195,9 @@ app.get('/api/auth/me', authMiddleware, async (req, res) => {
       where: { id: req.user.id },
       select: { id: true, email: true, username: true, travelStyle: true, bio: true, profilePicture: true, coverPhoto: true, createdAt: true, onboardingComplete: true, placesVisitedCount: true, budgetPreference: true, preferredVibe: true }
     });
+    if (!user) {
+      return res.status(401).json({ error: 'User no longer exists' });
+    }
     res.json(user);
   } catch (error) {
     res.status(500).json({ error: 'Server error' });
@@ -159,15 +233,64 @@ app.post('/api/auth/onboarding', authMiddleware, async (req, res) => {
 // Get all blogs (Feed)
 app.get('/api/blogs', async (req, res) => {
   try {
+    const { userId } = req.query;
+    
+    let userPrefs = null;
+    if (userId) {
+      userPrefs = await prisma.user.findUnique({
+        where: { id: userId },
+        select: { travelStyle: true, preferredVibe: true, budgetPreference: true }
+      });
+    }
+
     const blogs = await prisma.blog.findMany({
       include: {
         user: { select: { username: true, travelStyle: true, profilePicture: true } },
-        location: { select: { name: true, type: true } },
+        location: { select: { name: true, type: true, parent: { select: { name: true } } } },
         _count: { select: { comments: true } }
       },
       orderBy: { createdAt: 'desc' }
     });
-    res.json(blogs);
+    
+    // ML FEATURE: Algorithmic "Match Score"
+    const blogsWithScores = blogs.map(blog => {
+      let matchScore = 0;
+      
+      if (userPrefs) {
+        // Base score starts at 60 for logged-in users (baseline relevance)
+        let score = 60; 
+        
+        // Match 1: Travel Style Alignment
+        if (userPrefs.travelStyle && blog.user.travelStyle === userPrefs.travelStyle) {
+          score += 15;
+        }
+        
+        // Match 2: Tag Analysis (NLP Simulation)
+        if (blog.tags && blog.tags.length > 0) {
+          const stringifiedTags = blog.tags.join(' ').toLowerCase();
+          if (userPrefs.preferredVibe && stringifiedTags.includes(userPrefs.preferredVibe.toLowerCase())) score += 15;
+          if (userPrefs.budgetPreference && stringifiedTags.includes(userPrefs.budgetPreference.toLowerCase())) score += 10;
+        } else {
+          // If no tags, fallback text analysis
+          const contentStr = (blog.title + ' ' + blog.richContent).toLowerCase();
+          if (userPrefs.preferredVibe && contentStr.includes(userPrefs.preferredVibe.toLowerCase())) score += 15;
+          if (userPrefs.budgetPreference && contentStr.includes(userPrefs.budgetPreference.toLowerCase())) score += 10;
+        }
+        
+        // Randomization for serendipity (between -5 and +5)
+        score += Math.floor(Math.random() * 10) - 5;
+        
+        // Cap at 99%
+        matchScore = Math.min(99, Math.max(40, score));
+      }
+      
+      return {
+        ...blog,
+        matchScore: userPrefs ? matchScore : null
+      };
+    });
+
+    res.json(blogsWithScores);
   } catch (error) {
     console.error(error);
     res.status(500).json({ error: 'Server error fetching blogs' });
@@ -203,13 +326,59 @@ app.post('/api/blogs', authMiddleware, async (req, res) => {
       return res.status(400).json({ error: 'Title and content are required' });
     }
 
+    let tags = [];
+    let readingTime = 2; // Default fallback
+    let aiSummary = "";
+
+    // ---------------------------------------------------------
+    // ML FEATURE: Automated Semantic Tagging & Summarization
+    // ---------------------------------------------------------
+    try {
+      if (process.env.GEMINI_API_KEY) {
+        const ai = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
+        const model = ai.getGenerativeModel({ model: 'gemini-1.5-flash' });
+        
+        const cleanContent = richContent.replace(/<[^>]+>/g, ''); // strip HTML
+        
+        const prompt = `
+          Analyze the following travel blog post titled "${title}".
+          Content: ${cleanContent.substring(0, 1500)}...
+          
+          Provide a JSON response with EXACTLY the following structure (do NOT include markdown code blocks, just raw JSON):
+          {
+            "tags": ["3 to 5 relevant travel tags like #Adventure, #Budget"],
+            "readingTime": <integer representing estimated minutes to read>,
+            "summary": "A punchy, 2-sentence summary of this post."
+          }
+        `;
+        
+        const result = await model.generateContent(prompt);
+        let rawText = result.response.text().trim();
+        if (rawText.startsWith('\`\`\`json')) {
+           rawText = rawText.replace(/\`\`\`json/, '').replace(/\`\`\`/, '').trim();
+        }
+        const parsed = JSON.parse(rawText);
+        
+        tags = parsed.tags || [];
+        readingTime = parsed.readingTime || Math.ceil(cleanContent.length / 1000);
+        aiSummary = parsed.summary || "";
+      }
+    } catch (aiError) {
+      console.error("Failed to auto-tag blog with Gemini:", aiError.message);
+      // Fallback
+      readingTime = Math.ceil(richContent.replace(/<[^>]+>/g, '').length / 1000) || 2;
+    }
+
     const newBlog = await prisma.blog.create({
       data: {
         userId: req.user.id,
         title,
         richContent,
         coverImage: coverImage || null,
-        locationId: locationId || null
+        locationId: locationId || null,
+        tags,
+        readingTime,
+        aiSummary
       }
     });
     res.status(201).json(newBlog);

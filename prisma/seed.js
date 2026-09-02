@@ -1,6 +1,6 @@
 import { PrismaClient } from '@prisma/client';
 import bcrypt from 'bcryptjs';
-import { users, locationHierarchy, generateBlogs } from './seedData.js';
+import { users, locationHierarchy } from './seedData.js';
 import { newLocations } from './newLocations.js';
 import { getStoriesPart1 } from './storiesPart1.js';
 import { getStoriesPart2 } from './storiesPart2.js';
@@ -77,14 +77,17 @@ async function main() {
   console.log('✅ Inserted locations.');
 
   // 4. SEED BLOGS (Stories)
-  console.log('📝 Seeding blogs and itineraries...');
-  const blogs1 = generateBlogs(usersMap, locationsMap);
-  const blogs2 = getStoriesPart1(usersMap, locationsMap);
-  const blogs3 = getStoriesPart2(usersMap, locationsMap);
-  const blogsToInsert = [...blogs1, ...blogs2, ...blogs3];
+  console.log('📝 Seeding blogs...');
+  const blogs1 = getStoriesPart1(usersMap, locationsMap);
+  const blogs2 = getStoriesPart2(usersMap, locationsMap);
+  const blogsToInsert = [...blogs1, ...blogs2];
   const createdBlogs = [];
   
   for (const blog of blogsToInsert) {
+    if (!blog.userId || !blog.locationId) {
+       console.log(`Skipping blog: ${blog.title} - Missing user or location`);
+       continue;
+    }
     const created = await prisma.blog.create({
       data: {
         title: blog.title,
@@ -96,43 +99,64 @@ async function main() {
     });
     createdBlogs.push(created);
   }
-  console.log(`✅ Inserted ${blogsToInsert.length} blogs.`);
+  console.log(`✅ Inserted ${createdBlogs.length} blogs.`);
 
-  // 5. SEED COMMENTS
-  console.log('💬 Seeding comments...');
-  const userIds = Object.values(usersMap);
-  const genericComments = [
-    "This is so helpful, thanks for sharing!",
-    "Wow, adding this to my bucket list.",
-    "Did you feel safe traveling alone here?",
-    "Great itinerary! How much did the flights cost?",
-    "I was there last year, absolutely loved it.",
-    "Can't agree more with your points.",
-    "Thanks for the honest review.",
-    "Beautiful photos!"
+  // 5. SEED EXPERIENCES
+  console.log('🌟 Seeding experiences...');
+
+  // 6. SEED ITINERARIES
+  console.log('🗺️ Seeding itineraries...');
+
+  // 7. SEED CONTEXTUAL COMMENTS
+  console.log('💬 Seeding contextual comments...');
+  
+  // Specific contextual comments for the rich blogs
+  const commentTemplates = [
+    "I was just there last month and experienced exactly this. The part about {detail} is so true!",
+    "Wow, I had no idea about {detail}. Adding this to my bucket list.",
+    "This is so detailed! Did you happen to find {detail} difficult to manage?",
+    "I completely agree. Everyone rushes to the famous spots, but {detail} is where the real magic is.",
+    "Such beautiful formatting and photos. I tried doing a similar trip in 2022 but {detail} stopped me. Glad you made it!",
+    "Thank you for this guide! The tip about {detail} just saved me a lot of trouble for my upcoming trip.",
+    "This is why I love Anvesh. You won't find deep insights like {detail} on generic travel blogs.",
+    "Incredible storytelling. I felt like I was right there with you during {detail}."
   ];
 
+  // Helper to extract a detail from the blog's content
+  const extractDetail = (content) => {
+    const match = content.match(/<strong>(.*?)<\/strong>/);
+    return match ? match[1] : 'the local culture';
+  };
+
+  const userIds = Object.values(usersMap);
   let commentCount = 0;
+
   for (const blog of createdBlogs) {
-    // Add 1 to 4 random comments to each blog
-    const numComments = Math.floor(Math.random() * 4) + 1;
+    // Add 3-5 comments per blog
+    const numComments = Math.floor(Math.random() * 3) + 3;
     for (let i = 0; i < numComments; i++) {
-      const randomUserId = userIds[Math.floor(Math.random() * userIds.length)];
-      const randomText = genericComments[Math.floor(Math.random() * genericComments.length)];
+      const template = commentTemplates[Math.floor(Math.random() * commentTemplates.length)];
+      const detail = extractDetail(blog.richContent);
+      const commentText = template.replace('{detail}', detail);
       
+      const randomUser = userIds[Math.floor(Math.random() * userIds.length)];
+      
+      // Don't comment on own post
+      if (randomUser === blog.userId) continue;
+
       await prisma.comment.create({
         data: {
-          text: randomText,
-          userId: randomUserId,
+          text: commentText,
+          userId: randomUser,
           blogId: blog.id
         }
       });
       commentCount++;
     }
   }
-  console.log(`✅ Inserted ${commentCount} comments.`);
   
-  console.log('🎉 Seeding complete! Database is flooded with genuine data.');
+  console.log(`✅ Inserted ${commentCount} contextual comments.`);
+  console.log('🎉 Seed complete!');
 }
 
 main()
