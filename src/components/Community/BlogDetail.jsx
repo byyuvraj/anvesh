@@ -2,9 +2,10 @@ import React, { useEffect, useState } from 'react';
 import { useParams, Link, useNavigate } from 'react-router-dom';
 import api from '../../lib/api';
 import parse from 'html-react-parser';
-import { MessageCircle, ArrowLeft, Send, Sparkles } from 'lucide-react';
+import { MessageCircle, ArrowLeft, Send, Sparkles, Heart, Bookmark, Share2, Check, Clock, Tag, MapPin } from 'lucide-react';
 import { useAuthStore } from '../../store/authStore';
 import CoverImage from './CoverImage';
+import StoryAudioPlayer from '../StoryAudioPlayer';
 
 export default function BlogDetail() {
   const { id } = useParams();
@@ -12,6 +13,10 @@ export default function BlogDetail() {
   const [loading, setLoading] = useState(true);
   const [commentText, setCommentText] = useState('');
   const [submittingComment, setSubmittingComment] = useState(false);
+  const [isLiked, setIsLiked] = useState(false);
+  const [likesCount, setLikesCount] = useState(0);
+  const [isBookmarked, setIsBookmarked] = useState(false);
+  const [copied, setCopied] = useState(false);
   const { isAuthenticated, user } = useAuthStore();
   const navigate = useNavigate();
 
@@ -19,6 +24,9 @@ export default function BlogDetail() {
     try {
       const { data } = await api.get(`/blogs/${id}`);
       setBlog(data);
+      setIsLiked(Boolean(data.isLiked));
+      setLikesCount(data.likesCount || 0);
+      setIsBookmarked(Boolean(data.isBookmarked));
     } catch (err) {
       console.error(err);
     } finally {
@@ -29,6 +37,51 @@ export default function BlogDetail() {
   useEffect(() => {
     fetchBlog();
   }, [id]);
+
+  const handleToggleLike = async () => {
+    if (!isAuthenticated) {
+      navigate('/login');
+      return;
+    }
+    // Optimistic update
+    const prevLiked = isLiked;
+    const prevCount = likesCount;
+    setIsLiked(!prevLiked);
+    setLikesCount(prevLiked ? Math.max(0, prevCount - 1) : prevCount + 1);
+
+    try {
+      const { data } = await api.post(`/blogs/${id}/like`);
+      setIsLiked(data.liked);
+      setLikesCount(data.likeCount);
+    } catch (err) {
+      console.error(err);
+      setIsLiked(prevLiked);
+      setLikesCount(prevCount);
+    }
+  };
+
+  const handleToggleBookmark = async () => {
+    if (!isAuthenticated) {
+      navigate('/login');
+      return;
+    }
+    const prevBookmarked = isBookmarked;
+    setIsBookmarked(!prevBookmarked);
+
+    try {
+      const { data } = await api.post(`/blogs/${id}/bookmark`);
+      setIsBookmarked(data.bookmarked);
+    } catch (err) {
+      console.error(err);
+      setIsBookmarked(prevBookmarked);
+    }
+  };
+
+  const handleShare = () => {
+    navigator.clipboard.writeText(window.location.href);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2500);
+  };
 
   const handleComment = async (e) => {
     e.preventDefault();
@@ -52,22 +105,76 @@ export default function BlogDetail() {
   return (
     <div className="w-full flex flex-col relative animate-in fade-in duration-700 pb-20">
       
-      {/* Floating Back Button */}
-      <div className="fixed top-24 left-4 xl:left-10 z-40 hidden lg:block">
-        <button onClick={() => navigate(-1)} className="flex items-center justify-center w-12 h-12 bg-white/80 dark:bg-stone-900/80 backdrop-blur-md border border-stone-200 dark:border-stone-800 rounded-full text-stone-500 dark:text-stone-400 hover:text-stone-900 dark:hover:text-stone-200 hover:scale-110 transition-all shadow-sm">
+      {/* Floating Back Button & Quick Actions */}
+      <div className="fixed top-24 left-4 xl:left-10 z-40 hidden lg:flex flex-col gap-3">
+        <button 
+          onClick={() => navigate(-1)} 
+          className="flex items-center justify-center w-12 h-12 bg-white/80 dark:bg-stone-900/80 backdrop-blur-md border border-stone-200 dark:border-stone-800 rounded-full text-stone-500 dark:text-stone-400 hover:text-stone-900 dark:hover:text-stone-200 hover:scale-110 transition-all shadow-sm"
+          title="Go back"
+        >
           <ArrowLeft className="w-5 h-5" />
+        </button>
+
+        {/* Floating Like Button */}
+        <button 
+          onClick={handleToggleLike}
+          className={`flex flex-col items-center justify-center w-12 h-14 bg-white/80 dark:bg-stone-900/80 backdrop-blur-md border rounded-2xl transition-all shadow-sm group ${
+            isLiked 
+              ? 'border-red-400 text-red-500 bg-red-50/50 dark:bg-red-950/20' 
+              : 'border-stone-200 dark:border-stone-800 text-stone-500 hover:text-red-500'
+          }`}
+          title={isLiked ? "Unlike story" : "Like story"}
+        >
+          <Heart className={`w-5 h-5 transition-transform group-hover:scale-125 ${isLiked ? 'fill-red-500 text-red-500' : ''}`} />
+          <span className="text-[10px] font-black mt-0.5">{likesCount}</span>
+        </button>
+
+        {/* Floating Bookmark Button */}
+        <button 
+          onClick={handleToggleBookmark}
+          className={`flex items-center justify-center w-12 h-12 bg-white/80 dark:bg-stone-900/80 backdrop-blur-md border rounded-full transition-all shadow-sm group ${
+            isBookmarked 
+              ? 'border-[#8ab836] text-[#8ab836] bg-[#8ab836]/10' 
+              : 'border-stone-200 dark:border-stone-800 text-stone-500 hover:text-[#8ab836]'
+          }`}
+          title={isBookmarked ? "Remove from Bucket List" : "Save to Bucket List"}
+        >
+          <Bookmark className={`w-5 h-5 transition-transform group-hover:scale-110 ${isBookmarked ? 'fill-current' : ''}`} />
+        </button>
+
+        {/* Floating Share Button */}
+        <button 
+          onClick={handleShare}
+          className="flex items-center justify-center w-12 h-12 bg-white/80 dark:bg-stone-900/80 backdrop-blur-md border border-stone-200 dark:border-stone-800 rounded-full text-stone-500 hover:text-stone-900 dark:hover:text-stone-200 hover:scale-110 transition-all shadow-sm"
+          title="Copy link to clipboard"
+        >
+          {copied ? <Check className="w-5 h-5 text-emerald-500" /> : <Share2 className="w-5 h-5" />}
         </button>
       </div>
 
       <div className="max-w-[900px] mx-auto w-full px-4 lg:px-0 pt-10">
         
         <button onClick={() => navigate(-1)} className="inline-flex lg:hidden items-center gap-2 text-stone-500 dark:text-stone-400 hover:text-stone-900 dark:hover:text-stone-200 font-bold text-sm mb-8 transition-colors">
-          <ArrowLeft className="w-4 h-4" /> Back to map
+          <ArrowLeft className="w-4 h-4" /> Back to explorer
         </button>
+
         {/* Title Section */}
-        <div className="text-center mb-12">
-          <span className="text-stone-400 font-bold tracking-[0.3em] text-xs uppercase mb-6 block">Travel Journal</span>
-          <h1 className="text-5xl sm:text-7xl font-black text-stone-900 dark:text-white leading-[1.1] mb-8 font-serif tracking-tighter">
+        <div className="text-center mb-10">
+          <div className="flex items-center justify-center gap-3 mb-6">
+            <span className="text-stone-400 font-bold tracking-[0.3em] text-xs uppercase">Travel Journal</span>
+            {blog.location?.name && (
+              <span className="inline-flex items-center gap-1 text-xs font-bold bg-[#c8ff00]/20 text-stone-800 dark:text-[#c8ff00] px-2.5 py-0.5 rounded-full">
+                <MapPin className="w-3 h-3" /> {blog.location.name}
+              </span>
+            )}
+            {blog.readingTime && (
+              <span className="inline-flex items-center gap-1 text-xs font-semibold text-stone-400">
+                <Clock className="w-3 h-3" /> {blog.readingTime} min read
+              </span>
+            )}
+          </div>
+
+          <h1 className="text-4xl sm:text-6xl md:text-7xl font-black text-stone-900 dark:text-white leading-[1.1] mb-8 font-serif tracking-tighter">
             {blog.title}
           </h1>
 
@@ -87,11 +194,46 @@ export default function BlogDetail() {
               </div>
             </div>
           </div>
+
+          {/* Mobile Action Bar */}
+          <div className="flex lg:hidden items-center justify-center gap-3 mt-8">
+            <button 
+              onClick={handleToggleLike}
+              className={`flex items-center gap-1.5 px-4 py-2 rounded-full text-xs font-bold border transition-all ${
+                isLiked ? 'bg-red-50 border-red-300 text-red-500' : 'bg-stone-100 dark:bg-stone-800 border-stone-200 dark:border-stone-700 text-stone-700 dark:text-stone-300'
+              }`}
+            >
+              <Heart className={`w-4 h-4 ${isLiked ? 'fill-red-500 text-red-500' : ''}`} /> {likesCount} Likes
+            </button>
+            <button 
+              onClick={handleToggleBookmark}
+              className={`flex items-center gap-1.5 px-4 py-2 rounded-full text-xs font-bold border transition-all ${
+                isBookmarked ? 'bg-[#8ab836]/15 border-[#8ab836] text-[#8ab836]' : 'bg-stone-100 dark:bg-stone-800 border-stone-200 dark:border-stone-700 text-stone-700 dark:text-stone-300'
+              }`}
+            >
+              <Bookmark className={`w-4 h-4 ${isBookmarked ? 'fill-current' : ''}`} /> {isBookmarked ? 'Saved' : 'Bucket List'}
+            </button>
+            <button 
+              onClick={handleShare}
+              className="p-2 rounded-full bg-stone-100 dark:bg-stone-800 border border-stone-200 dark:border-stone-700 text-stone-600 dark:text-stone-300"
+            >
+              {copied ? <Check className="w-4 h-4 text-emerald-500" /> : <Share2 className="w-4 h-4" />}
+            </button>
+          </div>
         </div>
       </div>
 
+      {/* Audio Narrator Bar */}
+      <div className="max-w-[900px] mx-auto w-full px-4 lg:px-0">
+        <StoryAudioPlayer 
+          title={blog.title} 
+          summary={blog.aiSummary} 
+          content={blog.richContent} 
+        />
+      </div>
+
       {/* Hero Cover Image */}
-      <div className="w-full max-w-[1200px] mx-auto h-[400px] sm:h-[600px] rounded-[2rem] overflow-hidden mb-16 shadow-xl relative group border border-stone-200 dark:border-stone-800">
+      <div className="w-full max-w-[1200px] mx-auto h-[350px] sm:h-[550px] rounded-[2rem] overflow-hidden mb-12 shadow-xl relative group border border-stone-200 dark:border-stone-800">
         <CoverImage 
           src={blog.coverImage} 
           alt={blog.title} 
@@ -102,6 +244,31 @@ export default function BlogDetail() {
 
       <div className="max-w-[800px] mx-auto w-full px-4 lg:px-0">
         
+        {/* AI Key Insights / Summary Callout */}
+        {blog.aiSummary && (
+          <div className="mb-12 p-6 rounded-3xl bg-stone-50 dark:bg-stone-900 border border-[#8ab836]/30 shadow-sm relative overflow-hidden">
+            <div className="flex items-center gap-2 mb-2 text-[#8ab836] dark:text-[#c8ff00]">
+              <Sparkles className="w-4 h-4" />
+              <span className="text-[11px] font-black uppercase tracking-wider">AI Executive Brief</span>
+            </div>
+            <p className="text-stone-700 dark:text-stone-300 font-medium text-sm sm:text-base leading-relaxed italic">
+              "{blog.aiSummary}"
+            </p>
+          </div>
+        )}
+
+        {/* Tags */}
+        {blog.tags && blog.tags.length > 0 && (
+          <div className="flex flex-wrap gap-2 mb-8">
+            {blog.tags.map((tag, idx) => (
+              <span key={idx} className="inline-flex items-center gap-1 text-xs font-semibold bg-stone-100 dark:bg-stone-800 text-stone-600 dark:text-stone-300 px-3 py-1 rounded-full border border-stone-200 dark:border-stone-700">
+                <Tag className="w-3 h-3 text-[#8ab836]" />
+                {tag.startsWith('#') ? tag : `#${tag}`}
+              </span>
+            ))}
+          </div>
+        )}
+
         {/* Rich Text Editorial Body */}
         <div className="prose prose-lg md:prose-xl dark:prose-invert max-w-none text-stone-700 dark:text-stone-300 mb-20 font-serif leading-loose prose-p:mb-8 prose-img:rounded-3xl prose-img:shadow-xl prose-headings:font-sans prose-headings:font-black prose-headings:tracking-tight prose-headings:text-stone-900 dark:prose-headings:text-white prose-a:text-[#8ab836] dark:prose-a:text-[#c8ff00] hover:prose-a:text-[#729c29] dark:hover:prose-a:text-[#b8f200] prose-blockquote:border-l-4 prose-blockquote:border-[#8ab836] dark:prose-blockquote:border-[#c8ff00] prose-blockquote:bg-stone-50 dark:prose-blockquote:bg-stone-800/50 prose-blockquote:py-2 prose-blockquote:px-6 prose-blockquote:rounded-r-2xl prose-blockquote:font-normal prose-blockquote:italic prose-blockquote:text-stone-600 dark:prose-blockquote:text-stone-400">
           {parse(blog.richContent)}

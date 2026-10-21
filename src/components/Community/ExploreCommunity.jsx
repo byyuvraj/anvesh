@@ -1,10 +1,14 @@
 import React, { useEffect, useState } from 'react';
 import { useAuthStore } from '../../store/authStore';
 import api from '../../lib/api';
-import { Search, MapPin, Compass, MessageCircle, Navigation, Sparkles, PenTool } from 'lucide-react';
+import { 
+  Search, MapPin, Compass, MessageCircle, Navigation, Sparkles, 
+  PenTool, Heart, Bookmark, Filter, TrendingUp, Clock, CloudSun, X
+} from 'lucide-react';
 import { Link, useNavigate } from 'react-router-dom';
 import parse from 'html-react-parser';
 import CoverImage from './CoverImage';
+import WeatherAdvisor from '../WeatherAdvisor';
 
 const LocationInsight = ({ locationId }) => {
   const [insight, setInsight] = useState('');
@@ -56,8 +60,23 @@ export default function ExploreCommunity() {
   const [isSearching, setIsSearching] = useState(false);
   const [generalFeed, setGeneralFeed] = useState([]);
   const [loadingFeed, setLoadingFeed] = useState(true);
+  
+  // Filter & Sorting state
+  const [activeVibe, setActiveVibe] = useState('all');
+  const [activeSort, setActiveSort] = useState('match'); // 'match' | 'popular' | 'recent'
+  const [showWeatherDrawer, setShowWeatherDrawer] = useState(false);
 
-  // If not authenticated or not onboarded, redirect logic (App.jsx handles some, but good to be safe)
+  const vibeCategories = [
+    { id: 'all', label: 'All Stories' },
+    { id: 'adventure', label: '⛰️ Adventure & Treks' },
+    { id: 'culture', label: '🏛️ Heritage & Lore' },
+    { id: 'food', label: '🍜 Culinary Walks' },
+    { id: 'nature', label: '🌿 Nature & Wildlife' },
+    { id: 'relaxation', label: '🏖️ Chill & Scenic' },
+    { id: 'budget', label: '🎒 Solo / Backpacker' }
+  ];
+
+  // If not authenticated or not onboarded, redirect logic
   useEffect(() => {
     if (!isAuthenticated) {
       navigate('/');
@@ -66,20 +85,27 @@ export default function ExploreCommunity() {
     }
   }, [user, isAuthenticated, navigate]);
 
-  // Load general feed on mount
+  // Load feed based on activeVibe and activeSort
+  const fetchFeed = async () => {
+    setLoadingFeed(true);
+    try {
+      const params = new URLSearchParams();
+      if (user?.id) params.append('userId', user.id);
+      if (activeVibe && activeVibe !== 'all') params.append('vibe', activeVibe);
+      if (activeSort) params.append('sort', activeSort);
+
+      const { data } = await api.get(`/blogs?${params.toString()}`);
+      setGeneralFeed(data);
+    } catch (err) {
+      console.error("Failed to fetch feed", err);
+    } finally {
+      setLoadingFeed(false);
+    }
+  };
+
   useEffect(() => {
-    const fetchFeed = async () => {
-      try {
-        const { data } = await api.get('/blogs');
-        setGeneralFeed(data);
-      } catch (err) {
-        console.error("Failed to fetch feed", err);
-      } finally {
-        setLoadingFeed(false);
-      }
-    };
     fetchFeed();
-  }, []);
+  }, [activeVibe, activeSort, user]);
 
   // Debounced Search Effect
   useEffect(() => {
@@ -97,24 +123,64 @@ export default function ExploreCommunity() {
       } finally {
         setIsSearching(false);
       }
-    }, 400); // 400ms debounce
+    }, 400);
 
     return () => clearTimeout(timer);
   }, [searchQuery]);
 
-  // Handle Search (manual submit)
   const handleSearch = (e) => {
     e.preventDefault();
-    // The debounce effect will handle the actual fetching, 
-    // but this prevents the page from reloading on enter.
+  };
+
+  // Like toggle on card
+  const handleToggleLike = async (blogId, e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    if (!isAuthenticated) return navigate('/login');
+
+    setGeneralFeed(prev => prev.map(b => {
+      if (b.id === blogId) {
+        const isLiked = !b.isLiked;
+        const likesCount = isLiked ? (b.likesCount || 0) + 1 : Math.max(0, (b.likesCount || 0) - 1);
+        return { ...b, isLiked, likesCount };
+      }
+      return b;
+    }));
+
+    try {
+      const { data } = await api.post(`/blogs/${blogId}/like`);
+      setGeneralFeed(prev => prev.map(b => b.id === blogId ? { ...b, isLiked: data.liked, likesCount: data.likeCount } : b));
+    } catch (err) {
+      console.error(err);
+    }
+  };
+
+  // Bookmark toggle on card
+  const handleToggleBookmark = async (blogId, e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    if (!isAuthenticated) return navigate('/login');
+
+    setGeneralFeed(prev => prev.map(b => b.id === blogId ? { ...b, isBookmarked: !b.isBookmarked } : b));
+
+    try {
+      const { data } = await api.post(`/blogs/${blogId}/bookmark`);
+      setGeneralFeed(prev => prev.map(b => b.id === blogId ? { ...b, isBookmarked: data.bookmarked } : b));
+    } catch (err) {
+      console.error(err);
+    }
   };
 
   const renderBlogCard = (blog, isFeatured = false) => {
     const colSpan = isFeatured ? "md:col-span-12 lg:col-span-8" : "md:col-span-6 lg:col-span-4";
-    const imageHeight = isFeatured ? "h-[400px]" : "h-64";
+    const imageHeight = isFeatured ? "h-[360px] sm:h-[420px]" : "h-60";
 
     return (
-      <Link key={blog.id} to={`/blog/${blog.id}`} className={`group relative rounded-[2rem] overflow-hidden transition-all duration-500 flex flex-col ${colSpan} bg-white dark:bg-stone-900 border border-stone-200 dark:border-stone-800 hover:shadow-xl hover:-translate-y-1`}>
+      <Link 
+        key={blog.id} 
+        to={`/blog/${blog.id}`} 
+        className={`group relative rounded-[2rem] overflow-hidden transition-all duration-500 flex flex-col ${colSpan} bg-white dark:bg-stone-900 border border-stone-200 dark:border-stone-800 hover:shadow-2xl hover:-translate-y-1.5`}
+      >
         <div className={`${imageHeight} w-full overflow-hidden relative`}>
           <CoverImage 
             src={blog.coverImage} 
@@ -122,28 +188,78 @@ export default function ExploreCommunity() {
             locationName={blog.location?.name}
             className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-[1.5s] ease-out" 
           />
-          {blog.location && (
-            <div className="absolute top-4 right-4 bg-white/90 dark:bg-stone-900/90 backdrop-blur-sm px-3 py-1.5 rounded-full flex items-center gap-1.5 shadow-sm border border-white/20 dark:border-stone-700">
-              <MapPin className="w-3.5 h-3.5 text-[#8ab836]" />
-              <span className="text-[10px] font-bold text-stone-700 dark:text-stone-300 uppercase tracking-widest">{blog.location.name}</span>
-            </div>
-          )}
+          
+          {/* Top Badges (Location & AI Match) */}
+          <div className="absolute top-4 left-4 right-4 flex items-center justify-between pointer-events-none">
+            {blog.matchScore ? (
+              <span className="pointer-events-auto bg-stone-900/90 backdrop-blur-md text-[#c8ff00] border border-[#c8ff00]/40 px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-wider flex items-center gap-1 shadow-lg">
+                <Sparkles className="w-3 h-3 text-[#c8ff00]" /> {blog.matchScore}% Match
+              </span>
+            ) : <span />}
+
+            {blog.location && (
+              <div className="pointer-events-auto bg-white/95 dark:bg-stone-900/95 backdrop-blur-sm px-3 py-1 rounded-full flex items-center gap-1 shadow-md border border-white/20 dark:border-stone-700">
+                <MapPin className="w-3 h-3 text-[#8ab836]" />
+                <span className="text-[10px] font-bold text-stone-700 dark:text-stone-300 uppercase tracking-wider">{blog.location.name}</span>
+              </div>
+            )}
+          </div>
+
+          {/* Quick Bookmark Button on Image */}
+          <button 
+            type="button"
+            onClick={(e) => handleToggleBookmark(blog.id, e)}
+            className={`absolute bottom-3 right-3 p-2.5 rounded-full backdrop-blur-md transition-all shadow-md ${
+              blog.isBookmarked 
+                ? 'bg-[#c8ff00] text-stone-900 shadow-[#c8ff00]/30' 
+                : 'bg-black/50 text-white hover:bg-black/80'
+            }`}
+            title={blog.isBookmarked ? "Saved in Bucket List" : "Add to Bucket List"}
+          >
+            <Bookmark className={`w-3.5 h-3.5 ${blog.isBookmarked ? 'fill-current' : ''}`} />
+          </button>
         </div>
+
         <div className="p-6 flex flex-col flex-grow relative z-10">
-          <div className="flex justify-between items-start mb-4">
-            <span className="text-[10px] font-bold text-stone-500 dark:text-stone-400 bg-stone-100 dark:bg-stone-800 px-2 py-1 rounded uppercase tracking-widest">
+          <div className="flex justify-between items-center mb-3">
+            <span className="text-[10px] font-bold text-stone-600 dark:text-stone-400 bg-stone-100 dark:bg-stone-800 px-2.5 py-1 rounded-full uppercase tracking-wider">
               @{blog.user.username}
             </span>
-            <span className="text-[10px] font-bold text-stone-400 dark:text-stone-500">{new Date(blog.createdAt).toLocaleDateString()}</span>
+            <div className="flex items-center gap-2 text-[10px] text-stone-400 font-semibold">
+              {blog.readingTime && (
+                <span className="flex items-center gap-1">
+                  <Clock className="w-3 h-3" /> {blog.readingTime}m
+                </span>
+              )}
+              <span>•</span>
+              <span>{new Date(blog.createdAt).toLocaleDateString()}</span>
+            </div>
           </div>
-          <h3 className="font-black text-2xl text-stone-900 dark:text-white leading-tight group-hover:text-[#8ab836] dark:group-hover:text-[#c8ff00] transition-colors font-serif line-clamp-2">
+
+          <h3 className="font-black text-xl sm:text-2xl text-stone-900 dark:text-white leading-tight group-hover:text-[#8ab836] dark:group-hover:text-[#c8ff00] transition-colors font-serif line-clamp-2">
             {blog.title}
           </h3>
-          <div className="mt-4 text-sm text-stone-500 dark:text-stone-400 line-clamp-2 font-serif flex-grow">
+
+          <div className="mt-3 text-xs sm:text-sm text-stone-600 dark:text-stone-400 line-clamp-2 font-serif flex-grow leading-relaxed">
             {blog.richContent.replace(/<[^>]+>/g, '')}
           </div>
-          <div className="mt-6 pt-4 border-t border-stone-100 dark:border-stone-800 flex justify-between items-center text-xs font-bold text-stone-400 dark:text-stone-500">
-            <span className="flex items-center gap-1.5"><MessageCircle className="w-4 h-4" /> {blog._count?.comments || 0} Responses</span>
+
+          {/* Card Footer: Likes & Comments */}
+          <div className="mt-5 pt-4 border-t border-stone-100 dark:border-stone-800/80 flex justify-between items-center text-xs font-bold text-stone-500 dark:text-stone-400">
+            <button 
+              type="button"
+              onClick={(e) => handleToggleLike(blog.id, e)}
+              className={`flex items-center gap-1.5 transition-colors p-1 rounded-lg ${
+                blog.isLiked ? 'text-red-500' : 'hover:text-red-500'
+              }`}
+            >
+              <Heart className={`w-4 h-4 ${blog.isLiked ? 'fill-red-500 text-red-500' : ''}`} />
+              <span>{blog.likesCount || 0}</span>
+            </button>
+
+            <span className="flex items-center gap-1.5 hover:text-stone-800 dark:hover:text-stone-200 transition-colors">
+              <MessageCircle className="w-4 h-4" /> {blog.commentsCount || blog._count?.comments || 0} Responses
+            </span>
           </div>
         </div>
       </Link>
@@ -151,40 +267,62 @@ export default function ExploreCommunity() {
   };
 
   return (
-    <div className="w-full flex flex-col gap-12 pb-20 animate-in fade-in duration-500">
+    <div className="w-full flex flex-col gap-10 pb-20 animate-in fade-in duration-500">
       
       {/* Search & Explorer Hero */}
-      <div className="w-full py-16 px-6 bg-white dark:bg-stone-900 border border-stone-200 dark:border-stone-800 rounded-[3rem] shadow-sm flex flex-col items-center text-center relative overflow-hidden mt-4 transition-colors">
-        {/* Subtle background decoration */}
-        <div className="absolute -top-40 -right-40 w-96 h-96 bg-[#c8ff00] rounded-full mix-blend-multiply dark:mix-blend-lighten filter blur-[100px] opacity-10 dark:opacity-5" />
-        <div className="absolute -bottom-40 -left-40 w-96 h-96 bg-blue-400 rounded-full mix-blend-multiply dark:mix-blend-lighten filter blur-[100px] opacity-5 dark:opacity-[0.02]" />
+      <div className="w-full py-14 px-6 bg-white dark:bg-stone-900 border border-stone-200 dark:border-stone-800 rounded-[3rem] shadow-sm flex flex-col items-center text-center relative overflow-hidden mt-4 transition-colors">
+        <div className="absolute -top-40 -right-40 w-96 h-96 bg-[#c8ff00] rounded-full mix-blend-multiply dark:mix-blend-lighten filter blur-[100px] opacity-10 dark:opacity-5 pointer-events-none" />
+        <div className="absolute -bottom-40 -left-40 w-96 h-96 bg-blue-400 rounded-full mix-blend-multiply dark:mix-blend-lighten filter blur-[100px] opacity-5 dark:opacity-[0.02] pointer-events-none" />
 
         <div className="relative z-10 w-full max-w-2xl">
-          <h1 className="text-4xl sm:text-6xl font-black text-stone-900 dark:text-white tracking-tighter mb-4 font-sans">
+          <div className="inline-flex items-center gap-2 bg-[#8ab836]/10 text-[#8ab836] dark:text-[#c8ff00] px-4 py-1.5 rounded-full text-xs font-bold uppercase tracking-wider mb-4">
+            <Compass className="w-3.5 h-3.5" /> Collective Human Knowledge Base
+          </div>
+
+          <h1 className="text-4xl sm:text-6xl font-black text-stone-900 dark:text-white tracking-tighter mb-4 font-sans leading-tight">
             Where to next, <span className="font-serif italic font-normal text-stone-500 dark:text-stone-400">Explorer?</span>
           </h1>
-          <p className="text-stone-500 dark:text-stone-400 font-medium mb-10 text-lg">
-            Search for a state or city. Our engine will surface the best hidden gems and stories mapped by the community.
+          <p className="text-stone-500 dark:text-stone-400 font-medium mb-8 text-base sm:text-lg">
+            Search for any state, valley, or city. Our engine surfaces authentic hidden gems and relational community stories.
           </p>
 
-          <form onSubmit={handleSearch} className="relative w-full">
+          <form onSubmit={handleSearch} className="relative w-full mb-4">
             <input 
               type="text" 
-              placeholder="Search e.g. Rajasthan, Kerala, Spiti..." 
+              placeholder="Search e.g. Spiti, Kerala, Rajasthan, Varanasi..." 
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              className="w-full bg-stone-50 dark:bg-stone-950 border border-stone-200 dark:border-stone-800 rounded-full pl-14 pr-32 py-5 text-lg text-stone-900 dark:text-white focus:outline-none focus:ring-4 focus:ring-[#c8ff00]/20 dark:focus:ring-[#c8ff00]/10 focus:border-[#8ab836] shadow-inner transition-all font-medium placeholder-stone-400 dark:placeholder-stone-600"
+              className="w-full bg-stone-50 dark:bg-stone-950 border border-stone-200 dark:border-stone-800 rounded-full pl-14 pr-32 py-4 sm:py-5 text-base sm:text-lg text-stone-900 dark:text-white focus:outline-none focus:ring-4 focus:ring-[#c8ff00]/20 dark:focus:ring-[#c8ff00]/10 focus:border-[#8ab836] shadow-inner transition-all font-medium placeholder-stone-400"
             />
-            <Search className="absolute left-6 top-1/2 -translate-y-1/2 w-6 h-6 text-stone-400 dark:text-stone-600" />
+            <Search className="absolute left-5 top-1/2 -translate-y-1/2 w-5 h-5 text-stone-400" />
             <button 
               type="submit" 
-              className="absolute right-2 top-1/2 -translate-y-1/2 bg-stone-900 dark:bg-stone-800 hover:bg-stone-800 dark:hover:bg-stone-700 text-white px-6 py-3 rounded-full font-bold shadow-md transition-all text-sm"
+              className="absolute right-2 top-1/2 -translate-y-1/2 bg-stone-900 dark:bg-stone-800 hover:bg-stone-800 dark:hover:bg-stone-700 text-white px-5 sm:px-6 py-2.5 sm:py-3 rounded-full font-bold shadow-md transition-all text-xs sm:text-sm cursor-pointer"
             >
               {isSearching ? 'Searching...' : 'Explore'}
             </button>
           </form>
+
+          {/* Quick Trigger for Weather & Packing Forecaster */}
+          <div className="flex items-center justify-center gap-3">
+            <button 
+              type="button"
+              onClick={() => setShowWeatherDrawer(!showWeatherDrawer)}
+              className="inline-flex items-center gap-2 text-xs font-bold text-stone-600 dark:text-stone-400 hover:text-stone-900 dark:hover:text-white bg-stone-100 dark:bg-stone-800 px-4 py-1.5 rounded-full transition-colors border border-stone-200 dark:border-stone-700"
+            >
+              <CloudSun className="w-3.5 h-3.5 text-[#8ab836]" />
+              <span>{showWeatherDrawer ? "Hide Live Weather Forecaster" : "Check Live Destination Weather & Packing Tips"}</span>
+            </button>
+          </div>
         </div>
       </div>
+
+      {/* Weather Drawer if opened */}
+      {showWeatherDrawer && (
+        <div className="relative animate-in slide-in-from-top-4 duration-500">
+          <WeatherAdvisor initialDestination={searchQuery.trim() || "Manali"} />
+        </div>
+      )}
 
       {/* Recommendations Results Area */}
       {searchQuery && (
@@ -194,9 +332,11 @@ export default function ExploreCommunity() {
               <h2 className="text-3xl font-black text-stone-900 dark:text-white tracking-tighter flex items-center gap-2">
                 <Navigation className="w-6 h-6 text-[#8ab836]" /> Data Map for "{searchQuery}"
               </h2>
-              <p className="text-stone-500 dark:text-stone-400 font-medium text-sm mt-1">Based entirely on community data points.</p>
+              <p className="text-stone-500 dark:text-stone-400 font-medium text-sm mt-1">Surfaced directly from verified community records.</p>
             </div>
-            <button onClick={() => {setSearchQuery(''); setRecommendations([]);}} className="text-sm font-bold text-stone-400 dark:text-stone-500 hover:text-stone-900 dark:hover:text-stone-300 transition-colors">Clear Search</button>
+            <button onClick={() => {setSearchQuery(''); setRecommendations([]);}} className="text-sm font-bold text-stone-400 hover:text-stone-900 dark:hover:text-stone-300 transition-colors">
+              Clear Search
+            </button>
           </div>
 
           {recommendations.length === 0 && !isSearching ? (
@@ -234,7 +374,7 @@ export default function ExploreCommunity() {
                     </div>
                   )}
 
-                  {/* Child locations (e.g. Villages inside this State) */}
+                  {/* Child locations */}
                   {location.children?.length > 0 && (
                     <div>
                       <h4 className="text-sm font-bold text-stone-400 dark:text-stone-500 uppercase tracking-widest mb-4 flex items-center gap-2">
@@ -280,19 +420,88 @@ export default function ExploreCommunity() {
       {/* General Community Feed (Shows when not searching) */}
       {!searchQuery && (
         <div className="flex flex-col gap-6">
-          <div className="flex items-end justify-between px-2 mb-2">
-            <h2 className="text-3xl font-black text-stone-900 dark:text-white tracking-tighter">Latest from the Community</h2>
-            <Link to="/write" className="hidden sm:flex items-center gap-2 text-sm font-bold text-stone-500 dark:text-stone-400 hover:text-stone-900 dark:hover:text-stone-200 bg-white dark:bg-stone-900 border border-stone-200 dark:border-stone-800 px-4 py-2 rounded-full shadow-sm transition-colors">
-              <PenTool className="w-4 h-4" /> Share a Story
-            </Link>
+          
+          {/* Feed Header with Vibe Filters & Sort Controls */}
+          <div className="flex flex-col gap-4">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 px-2">
+              <div>
+                <h2 className="text-3xl font-black text-stone-900 dark:text-white tracking-tighter">
+                  Community Discoveries
+                </h2>
+                <p className="text-xs text-stone-500 dark:text-stone-400 font-medium mt-0.5">
+                  Real experiences from travelers across India & beyond
+                </p>
+              </div>
+
+              <div className="flex items-center gap-3">
+                {/* Sort Toggle */}
+                <div className="flex items-center bg-stone-100 dark:bg-stone-800 p-1 rounded-full text-xs font-bold border border-stone-200 dark:border-stone-700">
+                  <button 
+                    onClick={() => setActiveSort('match')}
+                    className={`px-3 py-1 rounded-full transition-all flex items-center gap-1 ${
+                      activeSort === 'match' 
+                        ? 'bg-stone-900 dark:bg-white text-white dark:text-stone-900 shadow-sm' 
+                        : 'text-stone-600 dark:text-stone-400'
+                    }`}
+                  >
+                    <Sparkles className="w-3 h-3 text-[#c8ff00]" /> AI Match
+                  </button>
+                  <button 
+                    onClick={() => setActiveSort('popular')}
+                    className={`px-3 py-1 rounded-full transition-all flex items-center gap-1 ${
+                      activeSort === 'popular' 
+                        ? 'bg-stone-900 dark:bg-white text-white dark:text-stone-900 shadow-sm' 
+                        : 'text-stone-600 dark:text-stone-400'
+                    }`}
+                  >
+                    <TrendingUp className="w-3 h-3" /> Popular
+                  </button>
+                  <button 
+                    onClick={() => setActiveSort('recent')}
+                    className={`px-3 py-1 rounded-full transition-all ${
+                      activeSort === 'recent' 
+                        ? 'bg-stone-900 dark:bg-white text-white dark:text-stone-900 shadow-sm' 
+                        : 'text-stone-600 dark:text-stone-400'
+                    }`}
+                  >
+                    Recent
+                  </button>
+                </div>
+
+                <Link to="/write" className="hidden sm:flex items-center gap-2 text-xs font-black text-stone-900 bg-[#c8ff00] hover:bg-[#b8f200] px-4 py-2 rounded-full shadow-sm transition-all hover:scale-105">
+                  <PenTool className="w-3.5 h-3.5" /> Write Story
+                </Link>
+              </div>
+            </div>
+
+            {/* Vibe Category Pills */}
+            <div className="flex items-center gap-2 overflow-x-auto pb-2 scrollbar-none px-2">
+              {vibeCategories.map(cat => (
+                <button
+                  key={cat.id}
+                  onClick={() => setActiveVibe(cat.id)}
+                  className={`px-4 py-2 rounded-full text-xs font-bold whitespace-nowrap transition-all border ${
+                    activeVibe === cat.id
+                      ? 'bg-stone-900 dark:bg-white text-white dark:text-stone-900 border-stone-900 dark:border-white shadow-md'
+                      : 'bg-white dark:bg-stone-900 text-stone-600 dark:text-stone-400 border-stone-200 dark:border-stone-800 hover:border-stone-400'
+                  }`}
+                >
+                  {cat.label}
+                </button>
+              ))}
+            </div>
           </div>
 
+          {/* Cards Grid */}
           <div className="grid grid-cols-1 md:grid-cols-12 gap-6">
             {loadingFeed ? (
-              <div className="col-span-full py-20 text-center font-bold text-stone-400 dark:text-stone-500">Loading map data...</div>
+              <div className="col-span-full py-24 flex flex-col items-center justify-center gap-3 text-stone-400">
+                <div className="w-6 h-6 border-2 border-[#c8ff00] border-t-transparent rounded-full animate-spin" />
+                <span className="text-xs font-semibold uppercase tracking-wider">Syncing community map feed...</span>
+              </div>
             ) : generalFeed.length === 0 ? (
-              <div className="col-span-full py-20 bg-white dark:bg-stone-900 border border-stone-200 dark:border-stone-800 rounded-[2.5rem] text-center font-bold text-stone-400 dark:text-stone-500">
-                The map is blank. Be the first to add a data point.
+              <div className="col-span-full py-20 bg-white dark:bg-stone-900 border border-stone-200 dark:border-stone-800 rounded-[2.5rem] text-center font-bold text-stone-400">
+                No stories found for this filter. Try selecting another vibe or write the first one!
               </div>
             ) : (
               generalFeed.map((blog, idx) => renderBlogCard(blog, idx === 0))

@@ -4,6 +4,7 @@ import dotenv from 'dotenv';
 import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
 import { GoogleGenerativeAI } from '@google/generative-ai';
+import axios from 'axios';
 
 import path from 'path';
 import fs from 'fs';
@@ -230,11 +231,22 @@ app.post('/api/auth/onboarding', authMiddleware, async (req, res) => {
 
 // --- Blog & Community Routes ---
 
-// Get all blogs (Feed)
+// Get all blogs (Feed with filters & engagement data)
 app.get('/api/blogs', async (req, res) => {
   try {
-    const { userId } = req.query;
+    let { userId, vibe, tag, search, sort } = req.query;
     
+    // Also check Authorization header if userId not passed in query
+    if (!userId && req.header('Authorization')) {
+      try {
+        const token = req.header('Authorization').split(' ')[1];
+        if (token) {
+          const decoded = jwt.verify(token, JWT_SECRET);
+          userId = decoded.id;
+        }
+      } catch (e) {}
+    }
+
     let userPrefs = null;
     if (userId) {
       userPrefs = await prisma.user.findUnique({
@@ -243,52 +255,90 @@ app.get('/api/blogs', async (req, res) => {
       });
     }
 
+    // Build Prisma where filter
+    const whereClause = {};
+    if (vibe && vibe.toLowerCase() !== 'all') {
+      const v = vibe.toLowerCase();
+      whereClause.OR = [
+        { tags: { hasSome: [v, `#${v}`, vibe] } },
+        { title: { contains: vibe, mode: 'insensitive' } },
+        { richContent: { contains: vibe, mode: 'insensitive' } }
+      ];
+    }
+
+    if (tag) {
+      whereClause.tags = { has: tag };
+    }
+
+    if (search && search.trim()) {
+      const s = search.trim();
+      whereClause.OR = [
+        ...(whereClause.OR || []),
+        { title: { contains: s, mode: 'insensitive' } },
+        { richContent: { contains: s, mode: 'insensitive' } },
+        { tags: { hasSome: [s, `#${s}`] } },
+        { location: { name: { contains: s, mode: 'insensitive' } } }
+      ];
+    }
+
     const blogs = await prisma.blog.findMany({
+      where: whereClause,
       include: {
         user: { select: { username: true, travelStyle: true, profilePicture: true } },
         location: { select: { name: true, type: true, parent: { select: { name: true } } } },
-        _count: { select: { comments: true } }
+        _count: { select: { comments: true, likes: true, bookmarks: true } },
+        ...(userId ? {
+          likes: { where: { userId } },
+          bookmarks: { where: { userId } }
+        } : {})
       },
       orderBy: { createdAt: 'desc' }
     });
     
     // ML FEATURE: Algorithmic "Match Score"
-    const blogsWithScores = blogs.map(blog => {
+    let blogsWithScores = blogs.map(blog => {
       let matchScore = 0;
       
       if (userPrefs) {
-        // Base score starts at 60 for logged-in users (baseline relevance)
         let score = 60; 
         
-        // Match 1: Travel Style Alignment
+        // Travel Style Alignment
         if (userPrefs.travelStyle && blog.user.travelStyle === userPrefs.travelStyle) {
           score += 15;
         }
         
-        // Match 2: Tag Analysis (NLP Simulation)
+        // Tag Analysis
         if (blog.tags && blog.tags.length > 0) {
           const stringifiedTags = blog.tags.join(' ').toLowerCase();
           if (userPrefs.preferredVibe && stringifiedTags.includes(userPrefs.preferredVibe.toLowerCase())) score += 15;
           if (userPrefs.budgetPreference && stringifiedTags.includes(userPrefs.budgetPreference.toLowerCase())) score += 10;
         } else {
-          // If no tags, fallback text analysis
           const contentStr = (blog.title + ' ' + blog.richContent).toLowerCase();
           if (userPrefs.preferredVibe && contentStr.includes(userPrefs.preferredVibe.toLowerCase())) score += 15;
           if (userPrefs.budgetPreference && contentStr.includes(userPrefs.budgetPreference.toLowerCase())) score += 10;
         }
         
-        // Randomization for serendipity (between -5 and +5)
+        // Serendipity delta
         score += Math.floor(Math.random() * 10) - 5;
-        
-        // Cap at 99%
         matchScore = Math.min(99, Math.max(40, score));
       }
       
       return {
         ...blog,
-        matchScore: userPrefs ? matchScore : null
+        matchScore: userPrefs ? matchScore : null,
+        likesCount: blog._count?.likes || 0,
+        commentsCount: blog._count?.comments || 0,
+        bookmarksCount: blog._count?.bookmarks || 0,
+        isLiked: Boolean(blog.likes && blog.likes.length > 0),
+        isBookmarked: Boolean(blog.bookmarks && blog.bookmarks.length > 0)
       };
     });
+
+    if (sort === 'popular') {
+      blogsWithScores.sort((a, b) => (b.likesCount * 2 + b.commentsCount) - (a.likesCount * 2 + a.commentsCount));
+    } else if (sort === 'match' && userPrefs) {
+      blogsWithScores.sort((a, b) => (b.matchScore || 0) - (a.matchScore || 0));
+    }
 
     res.json(blogsWithScores);
   } catch (error) {
@@ -300,18 +350,43 @@ app.get('/api/blogs', async (req, res) => {
 // Get single blog by ID
 app.get('/api/blogs/:id', async (req, res) => {
   try {
+    let userId = req.query.userId;
+    if (!userId && req.header('Authorization')) {
+      try {
+        const token = req.header('Authorization').split(' ')[1];
+        if (token) {
+          const decoded = jwt.verify(token, JWT_SECRET);
+          userId = decoded.id;
+        }
+      } catch (e) {}
+    }
+
     const blog = await prisma.blog.findUnique({
       where: { id: req.params.id },
       include: {
         user: { select: { username: true, travelStyle: true, profilePicture: true, bio: true } },
+        location: { select: { name: true, type: true, parent: { select: { name: true } } } },
         comments: {
           include: { user: { select: { username: true, profilePicture: true } } },
           orderBy: { createdAt: 'desc' }
-        }
+        },
+        _count: { select: { comments: true, likes: true, bookmarks: true } },
+        ...(userId ? {
+          likes: { where: { userId } },
+          bookmarks: { where: { userId } }
+        } : {})
       }
     });
     if (!blog) return res.status(404).json({ error: 'Blog not found' });
-    res.json(blog);
+
+    res.json({
+      ...blog,
+      likesCount: blog._count?.likes || 0,
+      commentsCount: blog._count?.comments || 0,
+      bookmarksCount: blog._count?.bookmarks || 0,
+      isLiked: Boolean(blog.likes && blog.likes.length > 0),
+      isBookmarked: Boolean(blog.bookmarks && blog.bookmarks.length > 0)
+    });
   } catch (error) {
     console.error(error);
     res.status(500).json({ error: 'Server error fetching blog' });
@@ -562,6 +637,308 @@ app.post('/api/blogs/:id/comments', authMiddleware, async (req, res) => {
   } catch (error) {
     console.error(error);
     res.status(500).json({ error: 'Server error adding comment' });
+  }
+});
+
+// --- Likes & Bookmarks Routes ---
+
+// Toggle like for a blog
+app.post('/api/blogs/:id/like', authMiddleware, async (req, res) => {
+  try {
+    const blogId = req.params.id;
+    const userId = req.user.id;
+    
+    const existing = await prisma.blogLike.findUnique({
+      where: { userId_blogId: { userId, blogId } }
+    });
+
+    if (existing) {
+      await prisma.blogLike.delete({
+        where: { id: existing.id }
+      });
+      const count = await prisma.blogLike.count({ where: { blogId } });
+      return res.json({ liked: false, likeCount: count });
+    } else {
+      await prisma.blogLike.create({
+        data: { userId, blogId }
+      });
+      const count = await prisma.blogLike.count({ where: { blogId } });
+      return res.json({ liked: true, likeCount: count });
+    }
+  } catch (error) {
+    console.error("Error toggling like:", error);
+    res.status(500).json({ error: "Failed to toggle like" });
+  }
+});
+
+// Toggle bookmark for a blog
+app.post('/api/blogs/:id/bookmark', authMiddleware, async (req, res) => {
+  try {
+    const blogId = req.params.id;
+    const userId = req.user.id;
+
+    const existing = await prisma.bookmark.findUnique({
+      where: { userId_blogId: { userId, blogId } }
+    });
+
+    if (existing) {
+      await prisma.bookmark.delete({
+        where: { id: existing.id }
+      });
+      return res.json({ bookmarked: false });
+    } else {
+      await prisma.bookmark.create({
+        data: { userId, blogId }
+      });
+      return res.json({ bookmarked: true });
+    }
+  } catch (error) {
+    console.error("Error toggling bookmark:", error);
+    res.status(500).json({ error: "Failed to toggle bookmark" });
+  }
+});
+
+// Get user's saved/bookmarked blogs
+app.get('/api/user/bookmarks', authMiddleware, async (req, res) => {
+  try {
+    const bookmarks = await prisma.bookmark.findMany({
+      where: { userId: req.user.id },
+      include: {
+        blog: {
+          include: {
+            user: { select: { username: true, travelStyle: true, profilePicture: true } },
+            location: { select: { name: true, type: true, parent: { select: { name: true } } } },
+            _count: { select: { comments: true, likes: true } }
+          }
+        }
+      },
+      orderBy: { createdAt: 'desc' }
+    });
+
+    const blogs = bookmarks.map(b => ({
+      ...b.blog,
+      bookmarkedAt: b.createdAt,
+      isBookmarked: true,
+      likesCount: b.blog._count?.likes || 0,
+      commentsCount: b.blog._count?.comments || 0
+    }));
+
+    res.json(blogs);
+  } catch (error) {
+    console.error("Error fetching bookmarks:", error);
+    res.status(500).json({ error: "Failed to fetch bookmarks" });
+  }
+});
+
+// --- Saved Itineraries & Trip Checklist CRUD ---
+
+// Get all saved itineraries for user
+app.get('/api/itineraries', authMiddleware, async (req, res) => {
+  try {
+    const itineraries = await prisma.itinerary.findMany({
+      where: { userId: req.user.id },
+      orderBy: { updatedAt: 'desc' }
+    });
+    
+    const parsed = itineraries.map(item => {
+      let parsedData = {};
+      try {
+        parsedData = typeof item.data === 'string' ? JSON.parse(item.data) : item.data;
+      } catch (e) {
+        parsedData = { raw: item.data };
+      }
+      return {
+        ...item,
+        parsedData
+      };
+    });
+
+    res.json(parsed);
+  } catch (error) {
+    console.error("Error fetching itineraries:", error);
+    res.status(500).json({ error: "Failed to fetch itineraries" });
+  }
+});
+
+// Save a new itinerary
+app.post('/api/itineraries', authMiddleware, async (req, res) => {
+  try {
+    const { destination, title, days, vibe, budget, data, isPublic } = req.body;
+    if (!destination) {
+      return res.status(400).json({ error: "Destination is required" });
+    }
+
+    const newItinerary = await prisma.itinerary.create({
+      data: {
+        userId: req.user.id,
+        destination,
+        title: title || `${days || 3}-Day Trip to ${destination}`,
+        days: parseInt(days) || 3,
+        vibe: vibe || 'Balanced',
+        budget: budget || 'Moderate',
+        data: typeof data === 'string' ? data : JSON.stringify(data),
+        isPublic: !!isPublic
+      }
+    });
+
+    let parsedData = {};
+    try {
+      parsedData = JSON.parse(newItinerary.data);
+    } catch (e) {
+      parsedData = newItinerary.data;
+    }
+
+    res.status(201).json({ ...newItinerary, parsedData });
+  } catch (error) {
+    console.error("Error saving itinerary:", error);
+    res.status(500).json({ error: "Failed to save itinerary" });
+  }
+});
+
+// Update an existing itinerary (e.g. check off an activity, rename)
+app.put('/api/itineraries/:id', authMiddleware, async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { title, data, isPublic } = req.body;
+
+    const existing = await prisma.itinerary.findUnique({ where: { id } });
+    if (!existing) return res.status(404).json({ error: "Itinerary not found" });
+    if (existing.userId !== req.user.id) return res.status(403).json({ error: "Unauthorized" });
+
+    const updated = await prisma.itinerary.update({
+      where: { id },
+      data: {
+        ...(title !== undefined && { title }),
+        ...(data !== undefined && { data: typeof data === 'string' ? data : JSON.stringify(data) }),
+        ...(isPublic !== undefined && { isPublic })
+      }
+    });
+
+    let parsedData = {};
+    try {
+      parsedData = JSON.parse(updated.data);
+    } catch (e) {
+      parsedData = updated.data;
+    }
+
+    res.json({ ...updated, parsedData });
+  } catch (error) {
+    console.error("Error updating itinerary:", error);
+    res.status(500).json({ error: "Failed to update itinerary" });
+  }
+});
+
+// Delete an itinerary
+app.delete('/api/itineraries/:id', authMiddleware, async (req, res) => {
+  try {
+    const { id } = req.params;
+    const existing = await prisma.itinerary.findUnique({ where: { id } });
+    if (!existing) return res.status(404).json({ error: "Itinerary not found" });
+    if (existing.userId !== req.user.id) return res.status(403).json({ error: "Unauthorized" });
+
+    await prisma.itinerary.delete({ where: { id } });
+    res.json({ success: true, message: "Itinerary deleted successfully" });
+  } catch (error) {
+    console.error("Error deleting itinerary:", error);
+    res.status(500).json({ error: "Failed to delete itinerary" });
+  }
+});
+
+// --- Real-time Weather & Seasonal Packing Advisor API ---
+app.get('/api/weather', async (req, res) => {
+  try {
+    const { destination } = req.query;
+    if (!destination) return res.status(400).json({ error: "Destination query parameter required" });
+
+    // Helper for WMO weather codes
+    const getWmoCondition = (code) => {
+      if (code === 0) return { label: "Clear Sky", icon: "sun" };
+      if (code === 1 || code === 2) return { label: "Partly Cloudy", icon: "cloud-sun" };
+      if (code === 3) return { label: "Overcast", icon: "cloud" };
+      if ([45, 48].includes(code)) return { label: "Foggy / Mist", icon: "cloud-fog" };
+      if ([51, 53, 55, 61, 63, 65, 80, 81, 82].includes(code)) return { label: "Rainy / Showers", icon: "cloud-rain" };
+      if ([71, 73, 75, 85, 86].includes(code)) return { label: "Snowy", icon: "snowflake" };
+      if ([95, 96, 99].includes(code)) return { label: "Thunderstorm", icon: "cloud-lightning" };
+      return { label: "Pleasant", icon: "wind" };
+    };
+
+    // 1. Geocode destination using Open-Meteo Geocoding
+    let geoRes;
+    try {
+      geoRes = await axios.get(`https://geocoding-api.open-meteo.com/v1/search?name=${encodeURIComponent(destination)}&count=1&language=en&format=json`, { timeout: 6000 });
+    } catch (e) {
+      console.warn("Geocoding failed, falling back to smart estimation");
+    }
+
+    if (!geoRes?.data?.results || geoRes.data.results.length === 0) {
+      return res.json({
+        destination,
+        found: false,
+        temperature: 24,
+        apparentTemperature: 25,
+        humidity: 50,
+        windSpeed: 12,
+        rainProbability: 10,
+        weatherCondition: "Pleasant & Clear",
+        conditionIcon: "sun",
+        packingTips: ["Comfortable sneakers", "Light layers", "Sunglasses & UV hat", "Hydration flask"]
+      });
+    }
+
+    const loc = geoRes.data.results[0];
+    const { latitude, longitude, name, country, admin1 } = loc;
+
+    // 2. Fetch meteorological data
+    const weatherRes = await axios.get(`https://api.open-meteo.com/v1/forecast?latitude=${latitude}&longitude=${longitude}&current=temperature_2m,relative_humidity_2m,apparent_temperature,precipitation,weather_code,wind_speed_10m&daily=weather_code,temperature_2m_max,temperature_2m_min,precipitation_probability_max&timezone=auto`, { timeout: 6000 });
+
+    const current = weatherRes.data.current || {};
+    const daily = weatherRes.data.daily || {};
+    const condition = getWmoCondition(current.weather_code || 0);
+
+    // Packing essentials heuristics
+    const packingTips = [];
+    const temp = current.temperature_2m ?? 22;
+    if (temp < 10) {
+      packingTips.push("Thermal base layer", "Heavy insulated jacket", "Gloves & wool beanie");
+    } else if (temp < 18) {
+      packingTips.push("Light jacket or hoodie", "Full-length trousers", "Sturdy walking boots");
+    } else if (temp > 32) {
+      packingTips.push("Breathable linen/cotton clothes", "Wide-brim hat & polarized sunglasses", "SPF 50+ sunscreen");
+    } else {
+      packingTips.push("Versatile layers", "Comfortable sneakers", "UV sunglasses");
+    }
+
+    if ((current.precipitation || 0) > 0 || (daily?.precipitation_probability_max?.[0] > 30)) {
+      packingTips.push("Compact umbrella / waterproof jacket", "Waterproof dry bag");
+    } else {
+      packingTips.push("Reusable water flask");
+    }
+
+    res.json({
+      destination: `${name}${admin1 ? ', ' + admin1 : ''}${country ? ', ' + country : ''}`,
+      found: true,
+      latitude,
+      longitude,
+      temperature: Math.round(temp),
+      apparentTemperature: Math.round(current.apparent_temperature ?? temp),
+      humidity: current.relative_humidity_2m ?? 50,
+      windSpeed: Math.round(current.wind_speed_10m ?? 8),
+      rainProbability: daily?.precipitation_probability_max?.[0] || 0,
+      weatherCondition: condition.label,
+      conditionIcon: condition.icon,
+      forecast: (daily?.time || []).slice(0, 4).map((date, idx) => ({
+        date,
+        maxTemp: Math.round(daily.temperature_2m_max?.[idx] ?? temp),
+        minTemp: Math.round(daily.temperature_2m_min?.[idx] ?? temp - 5),
+        condition: getWmoCondition(daily.weather_code?.[idx] || 0).label,
+        rainProb: daily.precipitation_probability_max?.[idx] || 0
+      })),
+      packingTips
+    });
+
+  } catch (error) {
+    console.error("Weather error:", error.message);
+    res.status(500).json({ error: "Failed to fetch weather data" });
   }
 });
 
