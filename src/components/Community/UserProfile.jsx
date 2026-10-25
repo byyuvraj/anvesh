@@ -118,7 +118,11 @@ export default function UserProfile() {
     const file = e.target.files[0];
     if (!file) return;
 
-    type === 'cover' ? setIsUploadingCover(true) : setIsUploadingAvatar(true);
+    if (type === 'cover') {
+      setIsUploadingCover(true);
+    } else {
+      setIsUploadingAvatar(true);
+    }
     
     try {
       const maxW = type === 'cover' ? 800 : 300;
@@ -135,7 +139,11 @@ export default function UserProfile() {
       console.error("Upload failed", err);
       alert("Failed to update profile picture.");
     } finally {
-      type === 'cover' ? setIsUploadingCover(false) : setIsUploadingAvatar(false);
+      if (type === 'cover') {
+        setIsUploadingCover(false);
+      } else {
+        setIsUploadingAvatar(false);
+      }
     }
   };
 

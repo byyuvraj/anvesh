@@ -35,6 +35,32 @@ export default function WriteBlog() {
     fetchLocations();
   }, []);
 
+  const imageHandler = () => {
+    const url = prompt('Please enter the image URL:');
+    if (url) {
+      const quill = quillRef.current?.getEditor();
+      if (quill) {
+        const range = quill.getSelection();
+        quill.insertEmbed(range ? range.index : 0, 'image', url);
+      }
+    }
+  };
+
+  const modules = React.useMemo(() => ({
+    toolbar: {
+      container: [
+        [{ 'header': [1, 2, 3, false] }],
+        ['bold', 'italic', 'underline', 'strike', 'blockquote'],
+        [{'list': 'ordered'}, {'list': 'bullet'}],
+        ['link', 'image'],
+        ['clean']
+      ],
+      handlers: {
+        image: imageHandler
+      }
+    }
+  }), []);
+
   if (!isAuthenticated) {
     return (
       <div className="flex flex-col justify-center items-center h-[600px] text-center px-4">
@@ -44,8 +70,6 @@ export default function WriteBlog() {
       </div>
     );
   }
-
-
 
   const handleCreateLocation = async () => {
     if (!newLocationName.trim()) return null;
@@ -89,30 +113,6 @@ export default function WriteBlog() {
       setIsPublishing(false);
     }
   };
-
-  const imageHandler = () => {
-    const url = prompt('Please enter the image URL:');
-    if (url) {
-      const quill = quillRef.current.getEditor();
-      const range = quill.getSelection();
-      quill.insertEmbed(range ? range.index : 0, 'image', url);
-    }
-  };
-
-  const modules = React.useMemo(() => ({
-    toolbar: {
-      container: [
-        [{ 'header': [1, 2, 3, false] }],
-        ['bold', 'italic', 'underline', 'strike', 'blockquote'],
-        [{'list': 'ordered'}, {'list': 'bullet'}],
-        ['link', 'image'],
-        ['clean']
-      ],
-      handlers: {
-        image: imageHandler
-      }
-    }
-  }), []);
 
   return (
     <div className="max-w-[900px] mx-auto py-10 px-4 animate-in fade-in duration-500">

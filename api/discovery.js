@@ -88,10 +88,18 @@ export default async function handler(req, res) {
 
   try {
     const ai = new GoogleGenerativeAI(apiKey);
-    const model = ai.getGenerativeModel({ 
-      model: "gemini-1.5-flash",
-      systemInstruction: systemInstruction 
-    });
+    let model;
+    try {
+      model = ai.getGenerativeModel({ 
+        model: "gemini-3.5-flash-lite",
+        systemInstruction: systemInstruction 
+      });
+    } catch (e) {
+      model = ai.getGenerativeModel({ 
+        model: "gemini-3.5-flash",
+        systemInstruction: systemInstruction 
+      });
+    }
 
     const prompt = `Generate cultural discovery data for: "${destination}"`;
     const result = await model.generateContent(prompt);

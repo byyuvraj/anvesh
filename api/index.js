@@ -9,8 +9,35 @@ import axios from 'axios';
 import path from 'path';
 import fs from 'fs';
 import { PrismaClient } from '@prisma/client';
+import { RecommendationEngine } from './recommendationEngine.js';
+import { resolveDestination, getWmoCondition, generatePackingTips } from './weatherService.js';
 
 dotenv.config();
+
+// Unified resilient Gemini caller with automatic model fallback
+async function callGemini(prompt, systemInstruction = null) {
+  const key = process.env.GEMINI_API_KEY;
+  if (!key) throw new Error("No GEMINI_API_KEY set");
+  const ai = new GoogleGenerativeAI(key);
+  
+  // gemini-3.5-flash-lite is high-speed and officially active; fall back to flash or pro if needed
+  const models = ['gemini-3.5-flash-lite', 'gemini-3.5-flash', 'gemini-3.8-flash'];
+  let lastErr = null;
+
+  for (const m of models) {
+    try {
+      const config = { model: m };
+      if (systemInstruction) config.systemInstruction = systemInstruction;
+      const model = ai.getGenerativeModel(config);
+      const res = await model.generateContent(prompt);
+      return res.response.text();
+    } catch (e) {
+      lastErr = e;
+      console.warn(`Gemini model ${m} attempt failed, trying next:`, e.message);
+    }
+  }
+  throw lastErr || new Error("All Gemini models failed");
+}
 
 const app = express();
 
@@ -75,9 +102,6 @@ app.post('/api/ai/itinerary', async (req, res) => {
       });
     }
 
-    const ai = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
-    const model = ai.getGenerativeModel({ model: 'gemini-1.5-flash' });
-    
     const prompt = `
       You are an expert AI travel planner. Create a highly detailed, ${days}-day itinerary for ${destination}.
       Preferences:
@@ -101,10 +125,12 @@ app.post('/api/ai/itinerary', async (req, res) => {
       }
     `;
 
-    const result = await model.generateContent(prompt);
-    let rawText = result.response.text().trim();
+    const rawResponse = await callGemini(prompt);
+    let rawText = rawResponse.trim();
     if (rawText.startsWith('```json')) {
       rawText = rawText.replace(/```json/, '').replace(/```/, '').trim();
+    } else if (rawText.startsWith('```')) {
+      rawText = rawText.replace(/```/g, '').trim();
     }
     
     const parsedItinerary = JSON.parse(rawText);
@@ -231,7 +257,7 @@ app.post('/api/auth/onboarding', authMiddleware, async (req, res) => {
 
 // --- Blog & Community Routes ---
 
-// Get all blogs (Feed with filters & engagement data)
+// Get all blogs (Feed with filters & multi-vector recommendation scoring)
 app.get('/api/blogs', async (req, res) => {
   try {
     let { userId, vibe, tag, search, sort } = req.query;
@@ -247,20 +273,15 @@ app.get('/api/blogs', async (req, res) => {
       } catch (e) {}
     }
 
-    let userPrefs = null;
-    if (userId) {
-      userPrefs = await prisma.user.findUnique({
-        where: { id: userId },
-        select: { travelStyle: true, preferredVibe: true, budgetPreference: true }
-      });
-    }
+    // Build comprehensive user interest profile (declared persona + likes + bookmarks + itineraries)
+    const userProfile = userId ? await RecommendationEngine.getUserProfile(prisma, userId) : null;
 
     // Build Prisma where filter
     const whereClause = {};
     if (vibe && vibe.toLowerCase() !== 'all') {
       const v = vibe.toLowerCase();
       whereClause.OR = [
-        { tags: { hasSome: [v, `#${v}`, vibe] } },
+        { tags: { hasSome: [v, `#${v}`, vibe, `#${vibe}`] } },
         { title: { contains: vibe, mode: 'insensitive' } },
         { richContent: { contains: vibe, mode: 'insensitive' } }
       ];
@@ -295,37 +316,15 @@ app.get('/api/blogs', async (req, res) => {
       orderBy: { createdAt: 'desc' }
     });
     
-    // ML FEATURE: Algorithmic "Match Score"
+    // Multi-Vector Recommendation Scoring
     let blogsWithScores = blogs.map(blog => {
-      let matchScore = 0;
-      
-      if (userPrefs) {
-        let score = 60; 
-        
-        // Travel Style Alignment
-        if (userPrefs.travelStyle && blog.user.travelStyle === userPrefs.travelStyle) {
-          score += 15;
-        }
-        
-        // Tag Analysis
-        if (blog.tags && blog.tags.length > 0) {
-          const stringifiedTags = blog.tags.join(' ').toLowerCase();
-          if (userPrefs.preferredVibe && stringifiedTags.includes(userPrefs.preferredVibe.toLowerCase())) score += 15;
-          if (userPrefs.budgetPreference && stringifiedTags.includes(userPrefs.budgetPreference.toLowerCase())) score += 10;
-        } else {
-          const contentStr = (blog.title + ' ' + blog.richContent).toLowerCase();
-          if (userPrefs.preferredVibe && contentStr.includes(userPrefs.preferredVibe.toLowerCase())) score += 15;
-          if (userPrefs.budgetPreference && contentStr.includes(userPrefs.budgetPreference.toLowerCase())) score += 10;
-        }
-        
-        // Serendipity delta
-        score += Math.floor(Math.random() * 10) - 5;
-        matchScore = Math.min(99, Math.max(40, score));
-      }
+      const scoreResult = RecommendationEngine.scoreBlog(blog, userProfile);
       
       return {
         ...blog,
-        matchScore: userPrefs ? matchScore : null,
+        matchScore: scoreResult.matchScore,
+        matchReason: scoreResult.matchReason,
+        scoreBreakdown: scoreResult.scoreBreakdown,
         likesCount: blog._count?.likes || 0,
         commentsCount: blog._count?.comments || 0,
         bookmarksCount: blog._count?.bookmarks || 0,
@@ -335,14 +334,17 @@ app.get('/api/blogs', async (req, res) => {
     });
 
     if (sort === 'popular') {
-      blogsWithScores.sort((a, b) => (b.likesCount * 2 + b.commentsCount) - (a.likesCount * 2 + a.commentsCount));
-    } else if (sort === 'match' && userPrefs) {
+      blogsWithScores.sort((a, b) => 
+        (b.likesCount * 2 + b.bookmarksCount * 3 + b.commentsCount * 1.5) - 
+        (a.likesCount * 2 + a.bookmarksCount * 3 + a.commentsCount * 1.5)
+      );
+    } else if (sort === 'match' && userProfile) {
       blogsWithScores.sort((a, b) => (b.matchScore || 0) - (a.matchScore || 0));
     }
 
     res.json(blogsWithScores);
   } catch (error) {
-    console.error(error);
+    console.error("Error fetching blogs:", error);
     res.status(500).json({ error: 'Server error fetching blogs' });
   }
 });
@@ -410,9 +412,6 @@ app.post('/api/blogs', authMiddleware, async (req, res) => {
     // ---------------------------------------------------------
     try {
       if (process.env.GEMINI_API_KEY) {
-        const ai = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
-        const model = ai.getGenerativeModel({ model: 'gemini-1.5-flash' });
-        
         const cleanContent = richContent.replace(/<[^>]+>/g, ''); // strip HTML
         
         const prompt = `
@@ -427,10 +426,12 @@ app.post('/api/blogs', authMiddleware, async (req, res) => {
           }
         `;
         
-        const result = await model.generateContent(prompt);
-        let rawText = result.response.text().trim();
-        if (rawText.startsWith('\`\`\`json')) {
-           rawText = rawText.replace(/\`\`\`json/, '').replace(/\`\`\`/, '').trim();
+        const rawResponse = await callGemini(prompt);
+        let rawText = rawResponse.trim();
+        if (rawText.startsWith('```json')) {
+           rawText = rawText.replace(/```json/, '').replace(/```/, '').trim();
+        } else if (rawText.startsWith('```')) {
+           rawText = rawText.replace(/```/g, '').trim();
         }
         const parsed = JSON.parse(rawText);
         
@@ -524,9 +525,6 @@ app.get('/api/locations/:id/insights', async (req, res) => {
     let aiSummary = '';
     
     try {
-      const ai = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
-      const model = ai.getGenerativeModel({ model: 'gemini-1.5-flash' });
-      
       const prompt = `You are an expert travel guide. The user is asking about the location "${location.name}". 
       First, provide a brief, engaging 2-sentence summary about this location from your own knowledge. 
       Second, summarize the following community tips we have about this place, and explicitly cite the usernames (e.g. "As @username mentioned...") telling the reader to check out their full posts. 
@@ -535,8 +533,7 @@ app.get('/api/locations/:id/insights', async (req, res) => {
       Community Tips:
       ${communityTips || 'No community tips yet. Encourage the user to be the first to write one!'}`;
 
-      const result = await model.generateContent(prompt);
-      aiSummary = result.response.text();
+      aiSummary = await callGemini(prompt);
     } catch (aiError) {
       console.error("Gemini AI Error (Invalid Key?):", aiError.message);
       
@@ -614,6 +611,41 @@ app.get('/api/recommendations', async (req, res) => {
   } catch (error) {
     console.error("Recommendation error:", error);
     res.status(500).json({ error: 'Server error fetching recommendations' });
+  }
+});
+
+// Personalized Recommendation Shelves (Curated For You, Hidden Gems, Trending, Based on Activity)
+app.get('/api/recommendations/personalized', async (req, res) => {
+  try {
+    let userId = req.query.userId;
+    if (!userId && req.header('Authorization')) {
+      try {
+        const token = req.header('Authorization').split(' ')[1];
+        if (token) {
+          const decoded = jwt.verify(token, JWT_SECRET);
+          userId = decoded.id;
+        }
+      } catch (e) {}
+    }
+
+    const collections = await RecommendationEngine.getCuratedCollections(prisma, userId);
+    res.json(collections);
+  } catch (err) {
+    console.error("Personalized recommendations error:", err);
+    res.status(500).json({ error: "Failed to generate recommendations" });
+  }
+});
+
+// Content-based Similar Blogs for Reading View
+app.get('/api/blogs/:id/similar', async (req, res) => {
+  try {
+    const { id } = req.params;
+    const limit = parseInt(req.query.limit) || 3;
+    const similar = await RecommendationEngine.getSimilarBlogs(prisma, id, limit);
+    res.json(similar);
+  } catch (err) {
+    console.error("Similar blogs error:", err);
+    res.status(500).json({ error: "Failed to fetch similar stories" });
   }
 });
 
@@ -850,80 +882,49 @@ app.get('/api/weather', async (req, res) => {
     const { destination } = req.query;
     if (!destination) return res.status(400).json({ error: "Destination query parameter required" });
 
-    // Helper for WMO weather codes
-    const getWmoCondition = (code) => {
-      if (code === 0) return { label: "Clear Sky", icon: "sun" };
-      if (code === 1 || code === 2) return { label: "Partly Cloudy", icon: "cloud-sun" };
-      if (code === 3) return { label: "Overcast", icon: "cloud" };
-      if ([45, 48].includes(code)) return { label: "Foggy / Mist", icon: "cloud-fog" };
-      if ([51, 53, 55, 61, 63, 65, 80, 81, 82].includes(code)) return { label: "Rainy / Showers", icon: "cloud-rain" };
-      if ([71, 73, 75, 85, 86].includes(code)) return { label: "Snowy", icon: "snowflake" };
-      if ([95, 96, 99].includes(code)) return { label: "Thunderstorm", icon: "cloud-lightning" };
-      return { label: "Pleasant", icon: "wind" };
-    };
+    // 1. Resolve to verified coordinates & state
+    const resolved = await resolveDestination(destination);
 
-    // 1. Geocode destination using Open-Meteo Geocoding
-    let geoRes;
-    try {
-      geoRes = await axios.get(`https://geocoding-api.open-meteo.com/v1/search?name=${encodeURIComponent(destination)}&count=1&language=en&format=json`, { timeout: 6000 });
-    } catch (e) {
-      console.warn("Geocoding failed, falling back to smart estimation");
-    }
-
-    if (!geoRes?.data?.results || geoRes.data.results.length === 0) {
-      return res.json({
-        destination,
-        found: false,
-        temperature: 24,
-        apparentTemperature: 25,
-        humidity: 50,
-        windSpeed: 12,
-        rainProbability: 10,
-        weatherCondition: "Pleasant & Clear",
-        conditionIcon: "sun",
-        packingTips: ["Comfortable sneakers", "Light layers", "Sunglasses & UV hat", "Hydration flask"]
+    if (!resolved) {
+      return res.status(404).json({ 
+        error: `Could not pinpoint meteorological coordinates for "${destination}". Try searching city name (e.g. Manali, Leh, Goa, Munnar).` 
       });
     }
 
-    const loc = geoRes.data.results[0];
-    const { latitude, longitude, name, country, admin1 } = loc;
+    const { latitude, longitude, name, admin1, country } = resolved;
 
-    // 2. Fetch meteorological data
-    const weatherRes = await axios.get(`https://api.open-meteo.com/v1/forecast?latitude=${latitude}&longitude=${longitude}&current=temperature_2m,relative_humidity_2m,apparent_temperature,precipitation,weather_code,wind_speed_10m&daily=weather_code,temperature_2m_max,temperature_2m_min,precipitation_probability_max&timezone=auto`, { timeout: 6000 });
+    // 2. Fetch real live meteorological measurements from Open-Meteo
+    const weatherRes = await axios.get(
+      `https://api.open-meteo.com/v1/forecast?latitude=${latitude}&longitude=${longitude}&current=temperature_2m,relative_humidity_2m,apparent_temperature,precipitation,weather_code,wind_speed_10m&daily=weather_code,temperature_2m_max,temperature_2m_min,precipitation_probability_max&timezone=auto`,
+      { timeout: 8000 }
+    );
 
     const current = weatherRes.data.current || {};
     const daily = weatherRes.data.daily || {};
     const condition = getWmoCondition(current.weather_code || 0);
 
-    // Packing essentials heuristics
-    const packingTips = [];
-    const temp = current.temperature_2m ?? 22;
-    if (temp < 10) {
-      packingTips.push("Thermal base layer", "Heavy insulated jacket", "Gloves & wool beanie");
-    } else if (temp < 18) {
-      packingTips.push("Light jacket or hoodie", "Full-length trousers", "Sturdy walking boots");
-    } else if (temp > 32) {
-      packingTips.push("Breathable linen/cotton clothes", "Wide-brim hat & polarized sunglasses", "SPF 50+ sunscreen");
-    } else {
-      packingTips.push("Versatile layers", "Comfortable sneakers", "UV sunglasses");
-    }
+    const temp = Math.round(current.temperature_2m ?? 20);
+    const apparentTemp = Math.round(current.apparent_temperature ?? temp);
+    const humidity = Math.round(current.relative_humidity_2m ?? 50);
+    const windSpeed = Math.round(current.wind_speed_10m ?? 8);
+    const rainProb = daily?.precipitation_probability_max?.[0] || 0;
 
-    if ((current.precipitation || 0) > 0 || (daily?.precipitation_probability_max?.[0] > 30)) {
-      packingTips.push("Compact umbrella / waterproof jacket", "Waterproof dry bag");
-    } else {
-      packingTips.push("Reusable water flask");
-    }
+    // Clean, proper destination display: "City, State, Country"
+    const destinationLabel = `${name}${admin1 ? ', ' + admin1 : ''}${country ? ', ' + country : ', India'}`;
+
+    // 3. Generate hyper-specific packing advice via Gemini
+    const packingTips = await generatePackingTips(destinationLabel, temp, condition.label, rainProb);
 
     res.json({
-      destination: `${name}${admin1 ? ', ' + admin1 : ''}${country ? ', ' + country : ''}`,
+      destination: destinationLabel,
       found: true,
       latitude,
       longitude,
-      temperature: Math.round(temp),
-      apparentTemperature: Math.round(current.apparent_temperature ?? temp),
-      humidity: current.relative_humidity_2m ?? 50,
-      windSpeed: Math.round(current.wind_speed_10m ?? 8),
-      rainProbability: daily?.precipitation_probability_max?.[0] || 0,
+      temperature: temp,
+      apparentTemperature: apparentTemp,
+      humidity,
+      windSpeed,
+      rainProbability: rainProb,
       weatherCondition: condition.label,
       conditionIcon: condition.icon,
       forecast: (daily?.time || []).slice(0, 4).map((date, idx) => ({
@@ -938,7 +939,7 @@ app.get('/api/weather', async (req, res) => {
 
   } catch (error) {
     console.error("Weather error:", error.message);
-    res.status(500).json({ error: "Failed to fetch weather data" });
+    res.status(500).json({ error: "Failed to fetch real weather data: " + error.message });
   }
 });
 

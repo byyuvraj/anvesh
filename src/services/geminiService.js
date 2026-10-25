@@ -118,10 +118,18 @@ async function generateDirectClientDiscovery(destination, apiKey) {
   `;
 
   try {
-    const model = ai.getGenerativeModel({ 
-      model: "gemini-1.5-flash",
-      systemInstruction: systemInstruction 
-    });
+    let model;
+    try {
+      model = ai.getGenerativeModel({ 
+        model: "gemini-3.5-flash-lite",
+        systemInstruction: systemInstruction 
+      });
+    } catch (e) {
+      model = ai.getGenerativeModel({ 
+        model: "gemini-3.5-flash",
+        systemInstruction: systemInstruction 
+      });
+    }
 
     const prompt = `Generate cultural discovery data for: "${destination}"`;
     

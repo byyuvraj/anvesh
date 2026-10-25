@@ -34,3 +34,6 @@ out/
 
 # TypeScript build caches
 *.tsbuildinfo
+
+# Scratch files
+scratch/

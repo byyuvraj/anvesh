@@ -3,7 +3,7 @@ import { useAuthStore } from '../../store/authStore';
 import api from '../../lib/api';
 import { 
   Search, MapPin, Compass, MessageCircle, Navigation, Sparkles, 
-  PenTool, Heart, Bookmark, Filter, TrendingUp, Clock, CloudSun, X
+  PenTool, Heart, Bookmark, TrendingUp, Clock, CloudSun, Gem, Flame, Layers
 } from 'lucide-react';
 import { Link, useNavigate } from 'react-router-dom';
 import parse from 'html-react-parser';
@@ -60,8 +60,20 @@ export default function ExploreCommunity() {
   const [isSearching, setIsSearching] = useState(false);
   const [generalFeed, setGeneralFeed] = useState([]);
   const [loadingFeed, setLoadingFeed] = useState(true);
+
+  // Personalized Recommendation Shelves
+  const [shelves, setShelves] = useState({
+    curatedForYou: [],
+    hiddenGems: [],
+    trending: [],
+    basedOnActivity: []
+  });
+  const [loadingShelves, setLoadingShelves] = useState(true);
+
+  // Active Collection Tab: 'curated' | 'gems' | 'trending' | 'all'
+  const [activeCollection, setActiveCollection] = useState('curated');
   
-  // Filter & Sorting state
+  // Vibe & Sorting state for 'all' feed
   const [activeVibe, setActiveVibe] = useState('all');
   const [activeSort, setActiveSort] = useState('match'); // 'match' | 'popular' | 'recent'
   const [showWeatherDrawer, setShowWeatherDrawer] = useState(false);
@@ -84,6 +96,24 @@ export default function ExploreCommunity() {
       navigate('/onboarding');
     }
   }, [user, isAuthenticated, navigate]);
+
+  // Fetch Personalized Shelves
+  const fetchShelves = async () => {
+    setLoadingShelves(true);
+    try {
+      const url = user?.id ? `/recommendations/personalized?userId=${user.id}` : '/recommendations/personalized';
+      const { data } = await api.get(url);
+      setShelves(data);
+    } catch (err) {
+      console.error("Failed to fetch recommendation shelves", err);
+    } finally {
+      setLoadingShelves(false);
+    }
+  };
+
+  useEffect(() => {
+    fetchShelves();
+  }, [user]);
 
   // Load feed based on activeVibe and activeSort
   const fetchFeed = async () => {
@@ -132,24 +162,32 @@ export default function ExploreCommunity() {
     e.preventDefault();
   };
 
+  // Helper to update blog in both states
+  const updateBlogInStates = (blogId, updateFn) => {
+    setGeneralFeed(prev => prev.map(b => b.id === blogId ? updateFn(b) : b));
+    setShelves(prev => ({
+      curatedForYou: prev.curatedForYou?.map(b => b.id === blogId ? updateFn(b) : b) || [],
+      hiddenGems: prev.hiddenGems?.map(b => b.id === blogId ? updateFn(b) : b) || [],
+      trending: prev.trending?.map(b => b.id === blogId ? updateFn(b) : b) || [],
+      basedOnActivity: prev.basedOnActivity?.map(b => b.id === blogId ? updateFn(b) : b) || []
+    }));
+  };
+
   // Like toggle on card
   const handleToggleLike = async (blogId, e) => {
     e.preventDefault();
     e.stopPropagation();
     if (!isAuthenticated) return navigate('/login');
 
-    setGeneralFeed(prev => prev.map(b => {
-      if (b.id === blogId) {
-        const isLiked = !b.isLiked;
-        const likesCount = isLiked ? (b.likesCount || 0) + 1 : Math.max(0, (b.likesCount || 0) - 1);
-        return { ...b, isLiked, likesCount };
-      }
-      return b;
-    }));
+    updateBlogInStates(blogId, b => {
+      const isLiked = !b.isLiked;
+      const likesCount = isLiked ? (b.likesCount || 0) + 1 : Math.max(0, (b.likesCount || 0) - 1);
+      return { ...b, isLiked, likesCount };
+    });
 
     try {
       const { data } = await api.post(`/blogs/${blogId}/like`);
-      setGeneralFeed(prev => prev.map(b => b.id === blogId ? { ...b, isLiked: data.liked, likesCount: data.likeCount } : b));
+      updateBlogInStates(blogId, b => ({ ...b, isLiked: data.liked, likesCount: data.likeCount }));
     } catch (err) {
       console.error(err);
     }
@@ -161,14 +199,28 @@ export default function ExploreCommunity() {
     e.stopPropagation();
     if (!isAuthenticated) return navigate('/login');
 
-    setGeneralFeed(prev => prev.map(b => b.id === blogId ? { ...b, isBookmarked: !b.isBookmarked } : b));
+    updateBlogInStates(blogId, b => ({ ...b, isBookmarked: !b.isBookmarked }));
 
     try {
       const { data } = await api.post(`/blogs/${blogId}/bookmark`);
-      setGeneralFeed(prev => prev.map(b => b.id === blogId ? { ...b, isBookmarked: data.bookmarked } : b));
+      updateBlogInStates(blogId, b => ({ ...b, isBookmarked: data.bookmarked }));
     } catch (err) {
       console.error(err);
     }
+  };
+
+  // Determine which list to display in the main card grid
+  const getActiveDisplayList = () => {
+    if (activeCollection === 'curated') {
+      return shelves.curatedForYou?.length > 0 ? shelves.curatedForYou : generalFeed;
+    }
+    if (activeCollection === 'gems') {
+      return shelves.hiddenGems?.length > 0 ? shelves.hiddenGems : generalFeed;
+    }
+    if (activeCollection === 'trending') {
+      return shelves.trending?.length > 0 ? shelves.trending : generalFeed;
+    }
+    return generalFeed;
   };
 
   const renderBlogCard = (blog, isFeatured = false) => {
@@ -192,7 +244,7 @@ export default function ExploreCommunity() {
           {/* Top Badges (Location & AI Match) */}
           <div className="absolute top-4 left-4 right-4 flex items-center justify-between pointer-events-none">
             {blog.matchScore ? (
-              <span className="pointer-events-auto bg-stone-900/90 backdrop-blur-md text-[#c8ff00] border border-[#c8ff00]/40 px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-wider flex items-center gap-1 shadow-lg">
+              <span className="pointer-events-auto bg-stone-900/95 backdrop-blur-md text-[#c8ff00] border border-[#c8ff00]/40 px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-wider flex items-center gap-1 shadow-lg">
                 <Sparkles className="w-3 h-3 text-[#c8ff00]" /> {blog.matchScore}% Match
               </span>
             ) : <span />}
@@ -200,7 +252,9 @@ export default function ExploreCommunity() {
             {blog.location && (
               <div className="pointer-events-auto bg-white/95 dark:bg-stone-900/95 backdrop-blur-sm px-3 py-1 rounded-full flex items-center gap-1 shadow-md border border-white/20 dark:border-stone-700">
                 <MapPin className="w-3 h-3 text-[#8ab836]" />
-                <span className="text-[10px] font-bold text-stone-700 dark:text-stone-300 uppercase tracking-wider">{blog.location.name}</span>
+                <span className="text-[10px] font-bold text-stone-700 dark:text-stone-300 uppercase tracking-wider">
+                  {blog.location.name}
+                </span>
               </div>
             )}
           </div>
@@ -223,7 +277,7 @@ export default function ExploreCommunity() {
         <div className="p-6 flex flex-col flex-grow relative z-10">
           <div className="flex justify-between items-center mb-3">
             <span className="text-[10px] font-bold text-stone-600 dark:text-stone-400 bg-stone-100 dark:bg-stone-800 px-2.5 py-1 rounded-full uppercase tracking-wider">
-              @{blog.user.username}
+              @{blog.user?.username || 'traveler'}
             </span>
             <div className="flex items-center gap-2 text-[10px] text-stone-400 font-semibold">
               {blog.readingTime && (
@@ -236,6 +290,14 @@ export default function ExploreCommunity() {
             </div>
           </div>
 
+          {/* Match Reason Banner if available */}
+          {blog.matchReason && (
+            <div className="mb-2.5 flex items-center gap-1.5 text-[11px] font-bold text-[#8ab836] dark:text-[#c8ff00] bg-[#8ab836]/10 dark:bg-[#c8ff00]/10 px-3 py-1 rounded-full w-fit max-w-full">
+              <Sparkles className="w-3 h-3 flex-shrink-0" />
+              <span className="truncate">{blog.matchReason}</span>
+            </div>
+          )}
+
           <h3 className="font-black text-xl sm:text-2xl text-stone-900 dark:text-white leading-tight group-hover:text-[#8ab836] dark:group-hover:text-[#c8ff00] transition-colors font-serif line-clamp-2">
             {blog.title}
           </h3>
@@ -243,6 +305,17 @@ export default function ExploreCommunity() {
           <div className="mt-3 text-xs sm:text-sm text-stone-600 dark:text-stone-400 line-clamp-2 font-serif flex-grow leading-relaxed">
             {blog.richContent.replace(/<[^>]+>/g, '')}
           </div>
+
+          {/* Tags */}
+          {blog.tags && blog.tags.length > 0 && (
+            <div className="flex flex-wrap gap-1.5 mt-4">
+              {blog.tags.slice(0, 3).map((t, idx) => (
+                <span key={idx} className="text-[10px] font-bold text-stone-500 dark:text-stone-400 bg-stone-100 dark:bg-stone-800/80 px-2 py-0.5 rounded-md">
+                  {t.startsWith('#') ? t : `#${t}`}
+                </span>
+              ))}
+            </div>
+          )}
 
           {/* Card Footer: Likes & Comments */}
           <div className="mt-5 pt-4 border-t border-stone-100 dark:border-stone-800/80 flex justify-between items-center text-xs font-bold text-stone-500 dark:text-stone-400">
@@ -266,6 +339,8 @@ export default function ExploreCommunity() {
     );
   };
 
+  const currentDisplayList = getActiveDisplayList();
+
   return (
     <div className="w-full flex flex-col gap-10 pb-20 animate-in fade-in duration-500">
       
@@ -283,13 +358,13 @@ export default function ExploreCommunity() {
             Where to next, <span className="font-serif italic font-normal text-stone-500 dark:text-stone-400">Explorer?</span>
           </h1>
           <p className="text-stone-500 dark:text-stone-400 font-medium mb-8 text-base sm:text-lg">
-            Search for any state, valley, or city. Our engine surfaces authentic hidden gems and relational community stories.
+            Search for any state, valley, or city. Our recommendation engine surfaces genuine travel stories, realistic budgets, and authentic routes.
           </p>
 
           <form onSubmit={handleSearch} className="relative w-full mb-4">
             <input 
               type="text" 
-              placeholder="Search e.g. Spiti, Kerala, Rajasthan, Varanasi..." 
+              placeholder="Search e.g. Spiti, Ladakh, Munnar, Goa, Jibhi, Pushkar..." 
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
               className="w-full bg-stone-50 dark:bg-stone-950 border border-stone-200 dark:border-stone-800 rounded-full pl-14 pr-32 py-4 sm:py-5 text-base sm:text-lg text-stone-900 dark:text-white focus:outline-none focus:ring-4 focus:ring-[#c8ff00]/20 dark:focus:ring-[#c8ff00]/10 focus:border-[#8ab836] shadow-inner transition-all font-medium placeholder-stone-400"
@@ -308,10 +383,10 @@ export default function ExploreCommunity() {
             <button 
               type="button"
               onClick={() => setShowWeatherDrawer(!showWeatherDrawer)}
-              className="inline-flex items-center gap-2 text-xs font-bold text-stone-600 dark:text-stone-400 hover:text-stone-900 dark:hover:text-white bg-stone-100 dark:bg-stone-800 px-4 py-1.5 rounded-full transition-colors border border-stone-200 dark:border-stone-700"
+              className="inline-flex items-center gap-2 text-xs font-bold text-stone-600 dark:text-stone-400 hover:text-stone-900 dark:hover:text-white bg-stone-100 dark:bg-stone-800 px-4 py-2 rounded-full transition-all border border-stone-200 dark:border-stone-700 hover:scale-105 shadow-sm"
             >
               <CloudSun className="w-3.5 h-3.5 text-[#8ab836]" />
-              <span>{showWeatherDrawer ? "Hide Live Weather Forecaster" : "Check Live Destination Weather & Packing Tips"}</span>
+              <span>{showWeatherDrawer ? "Hide Live Meteorological Forecaster" : "Check Live Destination Weather & Real Packing Tips"}</span>
             </button>
           </div>
         </div>
@@ -324,7 +399,7 @@ export default function ExploreCommunity() {
         </div>
       )}
 
-      {/* Recommendations Results Area */}
+      {/* Recommendations Results Area (When User is Searching) */}
       {searchQuery && (
         <div className="flex flex-col gap-8">
           <div className="flex items-end justify-between px-2">
@@ -397,7 +472,7 @@ export default function ExploreCommunity() {
                                   </div>
                                   <div>
                                     <h6 className="font-bold text-stone-900 dark:text-stone-200 text-sm group-hover:text-[#8ab836] line-clamp-1">{blog.title}</h6>
-                                    <span className="text-[10px] text-stone-500 dark:text-stone-400 uppercase tracking-widest font-bold">By @{blog.user.username}</span>
+                                    <span className="text-[10px] text-stone-500 dark:text-stone-400 uppercase tracking-widest font-bold">By @{blog.user?.username}</span>
                                   </div>
                                 </Link>
                               ))}
@@ -417,25 +492,171 @@ export default function ExploreCommunity() {
         </div>
       )}
 
-      {/* General Community Feed (Shows when not searching) */}
+      {/* Main Community Discovery Area (Shows when not searching) */}
       {!searchQuery && (
-        <div className="flex flex-col gap-6">
-          
-          {/* Feed Header with Vibe Filters & Sort Controls */}
-          <div className="flex flex-col gap-4">
-            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 px-2">
-              <div>
-                <h2 className="text-3xl font-black text-stone-900 dark:text-white tracking-tighter">
-                  Community Discoveries
-                </h2>
-                <p className="text-xs text-stone-500 dark:text-stone-400 font-medium mt-0.5">
-                  Real experiences from travelers across India & beyond
-                </p>
+        <div className="flex flex-col gap-8">
+
+          {/* SPOTLIGHT SHELF: Curated For Your Journey */}
+          {shelves.curatedForYou?.length > 0 && (
+            <div className="p-8 sm:p-10 rounded-[3rem] bg-gradient-to-br from-stone-900 via-stone-950 to-stone-900 border border-stone-800 text-white relative overflow-hidden shadow-2xl">
+              <div className="absolute top-0 right-0 w-96 h-96 bg-[#c8ff00]/10 rounded-full blur-3xl pointer-events-none" />
+              <div className="absolute bottom-0 left-0 w-80 h-80 bg-blue-500/10 rounded-full blur-3xl pointer-events-none" />
+
+              <div className="relative z-10 flex flex-col md:flex-row md:items-end justify-between gap-4 mb-8">
+                <div>
+                  <div className="inline-flex items-center gap-2 bg-[#c8ff00]/20 text-[#c8ff00] border border-[#c8ff00]/30 px-3 py-1 rounded-full text-xs font-black uppercase tracking-wider mb-3">
+                    <Sparkles className="w-3.5 h-3.5" /> Multi-Vector Recommendation Engine
+                  </div>
+                  <h2 className="text-3xl sm:text-4xl font-black text-white tracking-tight font-sans">
+                    Curated For Your Journey
+                  </h2>
+                  <p className="text-stone-400 font-medium text-sm sm:text-base mt-1">
+                    {user?.travelStyle ? (
+                      <>Aligned with your <strong className="text-white">{user.travelStyle}</strong> style & <strong className="text-[#c8ff00]">{user.preferredVibe || 'Authentic'}</strong> vibe.</>
+                    ) : (
+                      <>Personalized recommendations based on community trust and terrain proximity.</>
+                    )}
+                  </p>
+                </div>
+
+                <div className="text-xs font-bold text-stone-400">
+                  {shelves.curatedForYou.length} Top Matches
+                </div>
               </div>
 
-              <div className="flex items-center gap-3">
+              {/* Spotlight Cards Grid */}
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-5 relative z-10">
+                {shelves.curatedForYou.slice(0, 4).map(blog => (
+                  <Link 
+                    key={blog.id} 
+                    to={`/blog/${blog.id}`}
+                    className="group bg-stone-900/80 border border-stone-800 hover:border-[#c8ff00]/50 rounded-3xl overflow-hidden transition-all duration-300 flex flex-col hover:-translate-y-1 shadow-lg"
+                  >
+                    <div className="h-44 w-full relative overflow-hidden">
+                      <CoverImage 
+                        src={blog.coverImage} 
+                        alt={blog.title} 
+                        locationName={blog.location?.name}
+                        className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-700" 
+                      />
+                      <div className="absolute top-3 left-3 bg-stone-900/90 backdrop-blur-md text-[#c8ff00] border border-[#c8ff00]/40 px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider flex items-center gap-1 shadow-md">
+                        <Sparkles className="w-2.5 h-2.5" /> {blog.matchScore || 90}% Match
+                      </div>
+                      {blog.location && (
+                        <div className="absolute bottom-3 left-3 bg-stone-900/90 backdrop-blur-md px-2.5 py-0.5 rounded-full text-[10px] font-bold text-stone-300 flex items-center gap-1 border border-stone-700">
+                          <MapPin className="w-2.5 h-2.5 text-[#8ab836]" /> {blog.location.name}
+                        </div>
+                      )}
+                    </div>
+
+                    <div className="p-5 flex flex-col flex-grow">
+                      {blog.matchReason && (
+                        <span className="text-[10px] font-bold text-[#c8ff00] mb-2 line-clamp-1">
+                          {blog.matchReason}
+                        </span>
+                      )}
+                      <h4 className="font-bold text-base text-white font-serif group-hover:text-[#c8ff00] transition-colors line-clamp-2 mb-2 leading-snug">
+                        {blog.title}
+                      </h4>
+                      <p className="text-xs text-stone-400 line-clamp-2 font-serif flex-grow leading-relaxed">
+                        {blog.richContent.replace(/<[^>]+>/g, '')}
+                      </p>
+                      
+                      <div className="mt-4 pt-3 border-t border-stone-800/80 flex items-center justify-between text-[11px] text-stone-500 font-semibold">
+                        <span>@{blog.user?.username}</span>
+                        <span className="flex items-center gap-1">
+                          <Heart className="w-3 h-3 text-red-500" /> {blog.likesCount || 0}
+                        </span>
+                      </div>
+                    </div>
+                  </Link>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Collection Tabs & Feed Controls */}
+          <div className="flex flex-col gap-6">
+            
+            {/* Primary Collection Switcher */}
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 px-2">
+              <div className="flex items-center gap-2 overflow-x-auto pb-1 scrollbar-none">
+                <button
+                  onClick={() => setActiveCollection('curated')}
+                  className={`px-5 py-2.5 rounded-full text-xs font-black flex items-center gap-2 transition-all shadow-sm ${
+                    activeCollection === 'curated'
+                      ? 'bg-stone-900 dark:bg-white text-white dark:text-stone-900 scale-105'
+                      : 'bg-white dark:bg-stone-900 text-stone-600 dark:text-stone-400 border border-stone-200 dark:border-stone-800 hover:border-stone-400'
+                  }`}
+                >
+                  <Sparkles className="w-3.5 h-3.5 text-[#c8ff00]" />
+                  <span>Curated For You</span>
+                </button>
+
+                <button
+                  onClick={() => setActiveCollection('gems')}
+                  className={`px-5 py-2.5 rounded-full text-xs font-black flex items-center gap-2 transition-all shadow-sm ${
+                    activeCollection === 'gems'
+                      ? 'bg-stone-900 dark:bg-white text-white dark:text-stone-900 scale-105'
+                      : 'bg-white dark:bg-stone-900 text-stone-600 dark:text-stone-400 border border-stone-200 dark:border-stone-800 hover:border-stone-400'
+                  }`}
+                >
+                  <Gem className="w-3.5 h-3.5 text-cyan-400" />
+                  <span>Hidden Gems & Offbeat</span>
+                </button>
+
+                <button
+                  onClick={() => setActiveCollection('trending')}
+                  className={`px-5 py-2.5 rounded-full text-xs font-black flex items-center gap-2 transition-all shadow-sm ${
+                    activeCollection === 'trending'
+                      ? 'bg-stone-900 dark:bg-white text-white dark:text-stone-900 scale-105'
+                      : 'bg-white dark:bg-stone-900 text-stone-600 dark:text-stone-400 border border-stone-200 dark:border-stone-800 hover:border-stone-400'
+                  }`}
+                >
+                  <Flame className="w-3.5 h-3.5 text-amber-500" />
+                  <span>Trending Right Now</span>
+                </button>
+
+                <button
+                  onClick={() => setActiveCollection('all')}
+                  className={`px-5 py-2.5 rounded-full text-xs font-black flex items-center gap-2 transition-all shadow-sm ${
+                    activeCollection === 'all'
+                      ? 'bg-stone-900 dark:bg-white text-white dark:text-stone-900 scale-105'
+                      : 'bg-white dark:bg-stone-900 text-stone-600 dark:text-stone-400 border border-stone-200 dark:border-stone-800 hover:border-stone-400'
+                  }`}
+                >
+                  <Layers className="w-3.5 h-3.5 text-stone-500" />
+                  <span>All Stories</span>
+                </button>
+              </div>
+
+              {/* Write Story Action */}
+              <Link to="/write" className="self-start sm:self-auto flex items-center gap-2 text-xs font-black text-stone-900 bg-[#c8ff00] hover:bg-[#b8f200] px-5 py-2.5 rounded-full shadow-md transition-all hover:scale-105">
+                <PenTool className="w-3.5 h-3.5" /> Write Story
+              </Link>
+            </div>
+
+            {/* Vibe Category Pills & Sorting (When browsing all stories) */}
+            {activeCollection === 'all' && (
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 px-2 pt-2 border-t border-stone-200 dark:border-stone-800 animate-in fade-in duration-300">
+                <div className="flex items-center gap-2 overflow-x-auto pb-2 scrollbar-none">
+                  {vibeCategories.map(cat => (
+                    <button
+                      key={cat.id}
+                      onClick={() => setActiveVibe(cat.id)}
+                      className={`px-4 py-2 rounded-full text-xs font-bold whitespace-nowrap transition-all border ${
+                        activeVibe === cat.id
+                          ? 'bg-stone-900 dark:bg-white text-white dark:text-stone-900 border-stone-900 dark:border-white shadow-md'
+                          : 'bg-white dark:bg-stone-900 text-stone-600 dark:text-stone-400 border-stone-200 dark:border-stone-800 hover:border-stone-400'
+                      }`}
+                    >
+                      {cat.label}
+                    </button>
+                  ))}
+                </div>
+
                 {/* Sort Toggle */}
-                <div className="flex items-center bg-stone-100 dark:bg-stone-800 p-1 rounded-full text-xs font-bold border border-stone-200 dark:border-stone-700">
+                <div className="flex items-center bg-stone-100 dark:bg-stone-800 p-1 rounded-full text-xs font-bold border border-stone-200 dark:border-stone-700 flex-shrink-0">
                   <button 
                     onClick={() => setActiveSort('match')}
                     className={`px-3 py-1 rounded-full transition-all flex items-center gap-1 ${
@@ -467,46 +688,27 @@ export default function ExploreCommunity() {
                     Recent
                   </button>
                 </div>
-
-                <Link to="/write" className="hidden sm:flex items-center gap-2 text-xs font-black text-stone-900 bg-[#c8ff00] hover:bg-[#b8f200] px-4 py-2 rounded-full shadow-sm transition-all hover:scale-105">
-                  <PenTool className="w-3.5 h-3.5" /> Write Story
-                </Link>
               </div>
-            </div>
-
-            {/* Vibe Category Pills */}
-            <div className="flex items-center gap-2 overflow-x-auto pb-2 scrollbar-none px-2">
-              {vibeCategories.map(cat => (
-                <button
-                  key={cat.id}
-                  onClick={() => setActiveVibe(cat.id)}
-                  className={`px-4 py-2 rounded-full text-xs font-bold whitespace-nowrap transition-all border ${
-                    activeVibe === cat.id
-                      ? 'bg-stone-900 dark:bg-white text-white dark:text-stone-900 border-stone-900 dark:border-white shadow-md'
-                      : 'bg-white dark:bg-stone-900 text-stone-600 dark:text-stone-400 border-stone-200 dark:border-stone-800 hover:border-stone-400'
-                  }`}
-                >
-                  {cat.label}
-                </button>
-              ))}
-            </div>
-          </div>
-
-          {/* Cards Grid */}
-          <div className="grid grid-cols-1 md:grid-cols-12 gap-6">
-            {loadingFeed ? (
-              <div className="col-span-full py-24 flex flex-col items-center justify-center gap-3 text-stone-400">
-                <div className="w-6 h-6 border-2 border-[#c8ff00] border-t-transparent rounded-full animate-spin" />
-                <span className="text-xs font-semibold uppercase tracking-wider">Syncing community map feed...</span>
-              </div>
-            ) : generalFeed.length === 0 ? (
-              <div className="col-span-full py-20 bg-white dark:bg-stone-900 border border-stone-200 dark:border-stone-800 rounded-[2.5rem] text-center font-bold text-stone-400">
-                No stories found for this filter. Try selecting another vibe or write the first one!
-              </div>
-            ) : (
-              generalFeed.map((blog, idx) => renderBlogCard(blog, idx === 0))
             )}
+
+            {/* Cards Grid */}
+            <div className="grid grid-cols-1 md:grid-cols-12 gap-6 mt-2">
+              {loadingFeed || loadingShelves ? (
+                <div className="col-span-full py-24 flex flex-col items-center justify-center gap-3 text-stone-400">
+                  <div className="w-6 h-6 border-2 border-[#c8ff00] border-t-transparent rounded-full animate-spin" />
+                  <span className="text-xs font-semibold uppercase tracking-wider">Syncing curated community discoveries...</span>
+                </div>
+              ) : currentDisplayList.length === 0 ? (
+                <div className="col-span-full py-20 bg-white dark:bg-stone-900 border border-stone-200 dark:border-stone-800 rounded-[2.5rem] text-center font-bold text-stone-400">
+                  No stories found in this collection. Try another tab or be the first to write one!
+                </div>
+              ) : (
+                currentDisplayList.map((blog, idx) => renderBlogCard(blog, idx === 0))
+              )}
+            </div>
+
           </div>
+
         </div>
       )}
       
